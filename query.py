@@ -14,6 +14,7 @@ from rich import box
 from openai import OpenAI
 from config import *
 from quiz import run_quiz, show_quiz_history
+from knowledge_graph import run_graph_command, run_path_command, KnowledgeGraph
 
 
 # FIX UTF-8 STDOUT
@@ -27,6 +28,8 @@ console = Console()
 client  = QdrantClient(url=QDRANT_URL)
 
 STYLE = Style.from_dict({"prompt": "#00d7ff bold"})
+
+current_graph = None
 
 # GLOBAL CLEAN TEXT
 def clean_text(text):
@@ -43,28 +46,27 @@ HELP_TEXT = """
   [green]/tags[/green]      → Liste tous les tags disponibles
   [green]/quiz[/green]      → Lance un quiz de révision
   [green]/history[/green]   → Affiche l'historique des quiz
+  [green]/graph[/green]     → Génère le graphe de connaissances
+  [green]/path[/green]      → Trouve le chemin entre 2 concepts
   [green]/clear[/green]     → Efface l'historique de session
   [green]/vault[/green]     → Affiche le vault actif
   [green]/quit[/green]      → Quitter
+
+[bold cyan]Graphe de Connaissances :[/bold cyan]
+  [yellow]/graph[/yellow]              → Graphe de tous les concepts
+  [yellow]/graph @Certification[/yellow] → Graphe filtré par tag
+  [yellow]/path SSH Firewall[/yellow]   → Chemin entre deux concepts
 
 [bold cyan]Mode Quiz :[/bold cyan]
   [yellow]/quiz[/yellow]              → 10 questions aléatoires
   [yellow]/quiz 20[/yellow]           → 20 questions aléatoires
   [yellow]/quiz @Certification[/yellow] → Quiz sur un tag spécifique
-  [yellow]/quiz @Certification 15[/yellow] → 15 questions sur le tag
-
-[bold cyan]Filtrage par tag (préfixe @) :[/bold cyan]
-  [yellow]@Certification[/yellow] ta question
-  [yellow]@"Jour 1"[/yellow] ta question (guillemets si espaces)
-  [yellow]@QCM[/yellow] ta question
 
 [bold cyan]Exemples :[/bold cyan]
-  @Certification Explique les attaques réseau module 6
+  /graph @Certification
+  /path TCP Firewall
   /quiz @Certification 10
-  /history
 """
-
-
 
 def get_embedding(text: str) -> list[float]:
     response = ollama.embeddings(model=EMBED_MODEL, prompt=text)
@@ -242,6 +244,35 @@ def run_cli():
 
         elif user_input == "/history":
             show_quiz_history()
+
+        elif user_input.startswith("/graph"):
+            parts = user_input.split()
+            tag_filter = None
+
+            for part in parts[1:]:
+                if part.startswith("@"):
+                    tag_filter = part[1:].strip('"')
+
+            try:
+                global current_graph
+                current_graph = run_graph_command([f"@{tag_filter}"] if tag_filter else [])
+            except Exception as e:
+                console.print(f"[red]❌ Erreur graphe : {e}[/red]")
+
+        elif user_input.startswith("/path"):
+            parts = user_input.split(maxsplit=2)
+
+            if len(parts) < 3:
+                console.print("[yellow]Usage : /path Concept1 Concept2[/yellow]")
+                continue
+            
+            entity1 = parts[1]
+            entity2 = parts[2]
+
+            try:
+                run_path_command(entity1, entity2, current_graph)
+            except Exception as e:
+                console.print(f"[red]❌ Erreur : {e}[/red]")
 
         else:
             tag_filter, question = parse_filter(user_input)

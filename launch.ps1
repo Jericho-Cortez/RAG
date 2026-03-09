@@ -107,6 +107,17 @@ if ($configContent -match 'LLM_API_KEY\s*=\s*"gsk_') {
     Write-Warn "Clé Groq non configurée → vérifie config.py"
 }
 
+# ── Vérif dépendances Python ──────────────────────────────────
+Write-Step "Vérification des dépendances Python..."
+$checkDeps = & $VENV_PYTHON -c "import networkx, pyvis, qdrant_client, ollama, openai, rich" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn "Dépendances manquantes → installation automatique..."
+    & "$PROJECT_DIR\.venv\Scripts\pip.exe" install -r "$PROJECT_DIR\requirements.txt" | Out-Null
+    Write-OK "Dépendances installées"
+} else {
+    Write-OK "Dépendances Python OK"
+}
+
 # ── 6. Scan + index intelligent ───────────────────────────────
 Write-Step "Scan des fichiers .md dans '$VAULT_PATH'..."
 $mdFiles = Get-ChildItem -Path $VAULT_PATH -Recurse -Filter "*.md" -ErrorAction SilentlyContinue
