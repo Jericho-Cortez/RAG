@@ -38,19 +38,22 @@ HELP_TEXT = """
   [green]/help[/green]      → Affiche cette aide
   [green]/index[/green]     → Ré-indexe tout le vault
   [green]/status[/green]    → Affiche les stats de la base
+  [green]/tags[/green]      → Liste tous les tags disponibles
   [green]/clear[/green]     → Efface l'historique de session
   [green]/vault[/green]     → Affiche le vault actif
   [green]/quit[/green]      → Quitter
 
 [bold cyan]Filtrage par tag (préfixe @) :[/bold cyan]
   [yellow]@Certification[/yellow] ta question
-  [yellow]@"Jour 1"[/yellow] ta question
+  [yellow]@"Jour 1"[/yellow] ta question (guillemets si espaces)
   [yellow]@QCM[/yellow] ta question
 
 [bold cyan]Exemples :[/bold cyan]
   @Certification Explique les attaques réseau module 6
+  @"Jour 1" Quelle est la commande pour créer un utilisateur ?
   Quelle est la différence entre vulnérabilité et menace ?
 """
+
 
 def get_embedding(text: str) -> list[float]:
     response = ollama.embeddings(model=EMBED_MODEL, prompt=text)
@@ -117,14 +120,43 @@ def show_status():
         console.print(f"[cyan]  Points (chunks) : {collection_info.points_count}[/cyan]")
     except Exception as e:
         console.print(f"[red]Erreur stats : {e}[/red]")
+
 def parse_filter(user_input: str):
     import re
-    match = re.match(r'^@(\S+|".+?")\s+(.*)', user_input.strip())
+    # Gère @tag ou @"tag avec espaces"
+    match = re.match(r'^@(?:"([^"]+)"|(\S+))\s+(.*)', user_input.strip())
     if match:
-        tag = match.group(1).strip('"')
-        question = match.group(2).strip()
+        # group(1) = tag entre guillemets, group(2) = tag sans guillemets
+        tag = match.group(1) or match.group(2)
+        question = match.group(3).strip()
         return tag, question
     return None, user_input.strip()
+
+def show_tags():
+    """Affiche tous les tags disponibles dans la collection."""
+    try:
+        # Récupère un échantillon de points pour extraire les tags uniques
+        from qdrant_client.models import ScrollRequest
+        
+        scroll_result = client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=1000,
+            with_payload=True
+        )
+        
+        tags = set()
+        for point in scroll_result[0]:
+            if 'tag' in point.payload:
+                tags.add(clean_text(point.payload['tag']))
+        
+        if tags:
+            console.print("[bold cyan]📑 Tags disponibles :[/bold cyan]")
+            for tag in sorted(tags):
+                console.print(f"  [green]@{tag}[/green]")
+        else:
+            console.print("[yellow]⚠ Aucun tag trouvé[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Erreur : {e}[/red]")
 
 def run_cli():
     history = []
@@ -155,6 +187,8 @@ def run_cli():
         if user_input == "/quit":
             console.print("[yellow]👋 À bientôt ![/yellow]")
             break
+        elif user_input == "/tags":
+            show_tags()
         elif user_input == "/help":
             console.print(HELP_TEXT)
         elif user_input == "/status":
@@ -168,9 +202,12 @@ def run_cli():
             console.print("[green]✓ Historique effacé[/green]")
         elif user_input == "/index":
             console.print("[yellow]🔄 Lancement de l'indexation...[/yellow]")
-            import subprocess
-            subprocess.run(["python", "ingest.py"])
-            console.print("[green]✓ Indexation terminée ![/green]")
+            try:
+                from ingest import ingest_vault
+                ingest_vault()
+                console.print("[green]✓ Indexation terminée ![/green]")
+            except Exception as e:
+                console.print(f"[red]❌ Erreur lors de l'indexation : {e}[/red]")
         else:
             tag_filter, question = parse_filter(user_input)
             if tag_filter:
