@@ -1,0 +1,79 @@
+{
+  "date": "2026-03-09T21:39:37.540377",
+  "tag": "General",
+  "score": 2,
+  "total": 10,
+  "percentage": 20.0,
+  "questions": [
+    {
+      "question": "Quelle catégorie d'IoC (Indicators of Compromise) inclut les adresses expéditeurs, les sujets d'email et les pièces jointes ou les liens ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "Module_02_Ethical_Hacking_Fundamentals.md"
+    },
+    {
+      "question": "Quel type d'attaque inclut le sniffing et l'écoute réseau ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "Module_01_Information_Security_Fundamentals.md"
+    },
+    {
+      "question": "Quel est le rôle de la Machine Formateur dans l'infrastructure de la classe EHE ?",
+      "user_answer": "A",
+      "correct_answer": "C",
+      "correct": false,
+      "source": "Module_00_Student_Introduction.md"
+    },
+    {
+      "question": "Quel est un indicateur de comportement lié à une activité malveillante dans un système informatique ?",
+      "user_answer": "A",
+      "correct_answer": "A",
+      "correct": true,
+      "source": "Module_02_Ethical_Hacking_Fundamentals.md"
+    },
+    {
+      "question": "Qu'est-ce que le terme 'ng**' (sans nom précisé dans le contenu) décrit dans le contexte de la sécurité des zones sécurisées ?",
+      "user_answer": "A",
+      "correct_answer": "A",
+      "correct": true,
+      "source": "Module_05_Social_Engineering_Techniques_and_Countermeasures.md"
+    },
+    {
+      "question": "Quel est l'objectif principal de l'évaluation des vulnérabilités dans la sécurité informatique ?",
+      "user_answer": "A",
+      "correct_answer": "C",
+      "correct": false,
+      "source": "Module_03_Information_Security_Threats_and_Vulnerability_Assessment.md"
+    },
+    {
+      "question": "Quel est le nom du Trojan associé au port 11223 ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "Module_03_Information_Security_Threats_and_Vulnerability_Assessment.md"
+    },
+    {
+      "question": "Qu'est-ce qu'une attaque XXE (XML External Entity) ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "Module_07_Web_Application_Attacks_and_Countermeasures.md"
+    },
+    {
+      "question": "Quelle est la première phase de la Cyber Kill Chain ?",
+      "user_answer": "A",
+      "correct_answer": "C",
+      "correct": false,
+      "source": "Module_02_Ethical_Hacking_Fundamentals.md"
+    },
+    {
+      "question": "Quel type de Trojan permet à un attaquant d'accéder à distance à un système infecté ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "Module_03_Information_Security_Threats_and_Vulnerability_Assessment.md"
+    }
+  ]
+}

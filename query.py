@@ -13,6 +13,8 @@ from rich.panel import Panel
 from rich import box
 from openai import OpenAI
 from config import *
+from quiz import run_quiz, show_quiz_history
+
 
 # FIX UTF-8 STDOUT
 sys.stdout.reconfigure(encoding='utf-8')
@@ -39,9 +41,17 @@ HELP_TEXT = """
   [green]/index[/green]     → Ré-indexe tout le vault
   [green]/status[/green]    → Affiche les stats de la base
   [green]/tags[/green]      → Liste tous les tags disponibles
+  [green]/quiz[/green]      → Lance un quiz de révision
+  [green]/history[/green]   → Affiche l'historique des quiz
   [green]/clear[/green]     → Efface l'historique de session
   [green]/vault[/green]     → Affiche le vault actif
   [green]/quit[/green]      → Quitter
+
+[bold cyan]Mode Quiz :[/bold cyan]
+  [yellow]/quiz[/yellow]              → 10 questions aléatoires
+  [yellow]/quiz 20[/yellow]           → 20 questions aléatoires
+  [yellow]/quiz @Certification[/yellow] → Quiz sur un tag spécifique
+  [yellow]/quiz @Certification 15[/yellow] → 15 questions sur le tag
 
 [bold cyan]Filtrage par tag (préfixe @) :[/bold cyan]
   [yellow]@Certification[/yellow] ta question
@@ -50,9 +60,10 @@ HELP_TEXT = """
 
 [bold cyan]Exemples :[/bold cyan]
   @Certification Explique les attaques réseau module 6
-  @"Jour 1" Quelle est la commande pour créer un utilisateur ?
-  Quelle est la différence entre vulnérabilité et menace ?
+  /quiz @Certification 10
+  /history
 """
+
 
 
 def get_embedding(text: str) -> list[float]:
@@ -208,6 +219,30 @@ def run_cli():
                 console.print("[green]✓ Indexation terminée ![/green]")
             except Exception as e:
                 console.print(f"[red]❌ Erreur lors de l'indexation : {e}[/red]")
+        elif user_input.startswith("/quiz"):
+            # Parse la commande : /quiz [@tag] [nombre]
+            parts = user_input.split()
+            tag_filter = None
+            num_questions = 10
+
+            for part in parts[1:]:
+                if part.startswith("@"):
+                    tag_filter = part[1:].strip('"')
+                elif part.isdigit():
+                    num_questions = int(part)
+
+            console.print(f"[cyan]🎯 Lancement du quiz : {num_questions} questions[/cyan]")
+            if tag_filter:
+                console.print(f"[cyan]🏷️  Tag : {tag_filter}[/cyan]\n")
+
+            try:
+                run_quiz(tag_filter, num_questions)
+            except Exception as e:
+                console.print(f"[red]❌ Erreur quiz : {e}[/red]")
+
+        elif user_input == "/history":
+            show_quiz_history()
+
         else:
             tag_filter, question = parse_filter(user_input)
             if tag_filter:

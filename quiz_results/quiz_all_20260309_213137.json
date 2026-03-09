@@ -1,0 +1,149 @@
+{
+  "date": "2026-03-09T21:31:37.876452",
+  "tag": null,
+  "score": 8,
+  "total": 20,
+  "percentage": 40.0,
+  "questions": [
+    {
+      "question": "Quelle est la principale différence entre crt.sh et un scanner actif ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "crt.sh.md"
+    },
+    {
+      "question": "Quel type de requête est utilisé pour tracer l'activité d'un utilisateur suspect ?",
+      "user_answer": "C",
+      "correct_answer": "A",
+      "correct": false,
+      "source": "Splunk.md"
+    },
+    {
+      "question": "Quel est l'un des cas d'usage pour détecter des scans de ports ou des attaques Man-in-the-Middle ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "Wireshark.md"
+    },
+    {
+      "question": "Quelle commande nmap utilise-t-on pour rechercher des vulnérabilités sur un hôte distant ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "Ethical_Hacking_Essentials_Jour_1.md"
+    },
+    {
+      "question": "Quelle caractéristique de l'infrastructure est mise en évidence par le fait que tous les sous-domaines pointent vers la même IP ?",
+      "user_answer": "A",
+      "correct_answer": "C",
+      "correct": false,
+      "source": "TP1_OSINT_laplateforme_io.md"
+    },
+    {
+      "question": "Qu'est-ce que la conformité dans le contexte de la norme ISO 27001:2022 ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "ISO_IEC 27001.md"
+    },
+    {
+      "question": "Qu'est-ce que SIEM signifie dans le contexte de la sécurité informatique ?",
+      "user_answer": "B",
+      "correct_answer": "A",
+      "correct": false,
+      "source": "ELK Stack.md"
+    },
+    {
+      "question": "Qu'est-ce que le système de notation Y, mentionné dans le contenu du cours, pourrait-il être en réalité ?",
+      "user_answer": "B",
+      "correct_answer": "B",
+      "correct": true,
+      "source": "CVSS.md"
+    },
+    {
+      "question": "Qu'est-ce qu'un indicateur de type 'Email Indicators' dans les IoCs?",
+      "user_answer": "C",
+      "correct_answer": "C",
+      "correct": true,
+      "source": "Module_02_Ethical_Hacking_Fundamentals.md"
+    },
+    {
+      "question": "Quel système d'exploitation est utilisé par la machine dont le port 445/tcp est ouvert avec le service microsoft-ds ?",
+      "user_answer": "B",
+      "correct_answer": "B",
+      "correct": true,
+      "source": "TP1_EHE_Scan_Reseau_COMPLET.md"
+    },
+    {
+      "question": "Quel est l'objectif principal d'une analyse critique des sous-domaines ?",
+      "user_answer": "B",
+      "correct_answer": "D",
+      "correct": false,
+      "source": "TP1_OSINT_laplateforme_io.md"
+    },
+    {
+      "question": "Quel outil est utilisé pour détecter et exploiter automatiquement les injections SQL ?",
+      "user_answer": "C",
+      "correct_answer": "C",
+      "correct": true,
+      "source": "Correction_QCM_Cybersecurite.md"
+    },
+    {
+      "question": "Quel est le référentiel de vulnérabilités qui attribue un identifiant unique à chaque vulnérabilité, comme CVE-2017-0144 pour EternalBlue ?",
+      "user_answer": "B",
+      "correct_answer": "B",
+      "correct": true,
+      "source": "TP1_EHE_Scan_Reseau_COMPLET.md"
+    },
+    {
+      "question": "Qui est l'organisme responsable de la création du cours 'Ethical Hacking Essentials (EHE v1)' ?",
+      "user_answer": "B",
+      "correct_answer": "B",
+      "correct": true,
+      "source": "Module_03_Information_Security_Threats_and_Vulnerability_Assessment.md"
+    },
+    {
+      "question": "Qu'est-ce qu'un 'Drive-by Download'?",
+      "user_answer": "C",
+      "correct_answer": "C",
+      "correct": true,
+      "source": "Module_03_Information_Security_Threats_and_Vulnerability_Assessment.md"
+    },
+    {
+      "question": "Quel est l'outil utilisé pour l'analyse globale du rapport Nmap et le fingerprinting (OS, versions) dans le TP 1 ?",
+      "user_answer": "A",
+      "correct_answer": "C",
+      "correct": false,
+      "source": "Ethical_Hacking_Essentials_-_Formation_Complete.md"
+    },
+    {
+      "question": "Quel outil est utilisé pour collecter les fichiers de logs tels que `/var/log/syslog` ?",
+      "user_answer": "A",
+      "correct_answer": "C",
+      "correct": false,
+      "source": "ELK Stack.md"
+    },
+    {
+      "question": "Quel est l'objectif principal de la 'Réponse à incident' dans la gestion des certificats ?",
+      "user_answer": "A",
+      "correct_answer": "B",
+      "correct": false,
+      "source": "crt.sh.md"
+    },
+    {
+      "question": "Quel outil permet de contrôler, gérer et surveiller les accès des comptes à hauts privilèges ?",
+      "user_answer": "B",
+      "correct_answer": "A",
+      "correct": false,
+      "source": "Correction_QCM_Cybersecurite.md"
+    },
+    {
+      "question": "Quel est le nombre de problèmes de configuration détectés, y compris la fuite via ETags et les headers de sécurité manquants ?",
+      "user_answer": "D",
+      "correct_answer": "D",
+      "correct": true,
+      "source": "TP-2-EHE-Jour2_Identification_Vulnerabilites.md"
+    }
+  ]
+}
