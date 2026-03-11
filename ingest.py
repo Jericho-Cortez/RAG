@@ -87,9 +87,12 @@ def _extract_pdf_pypdf2(pdf_path: Path) -> str:
         return ""
 
 
-def detect_tag(file_path: Path) -> str:
+def detect_tag(file_path: Path, vault_base_path: Path = None) -> str:
     """Détecte le tag depuis le chemin du fichier."""
-    parts = file_path.relative_to(Path(VAULT_PATH)).parts
+    if vault_base_path is None:
+        vault_base_path = Path(VAULT_PATH)
+    
+    parts = file_path.relative_to(vault_base_path).parts
     if len(parts) == 1:
         return "General"
     folder = parts[0]
@@ -134,15 +137,18 @@ def _stable_id(file_path: str, chunk_index: int) -> int:
     return int(h[:15], 16)
 
 
-def _ensure_collection(client: QdrantClient):
+def _ensure_collection(client: QdrantClient, collection_name: str = None):
     """Crée la collection si elle n'existe pas."""
+    if collection_name is None:
+        collection_name = COLLECTION_NAME
+    
     existing = [c.name for c in client.get_collections().collections]
-    if COLLECTION_NAME not in existing:
+    if collection_name not in existing:
         client.create_collection(
-            collection_name=COLLECTION_NAME,
+            collection_name=collection_name,
             vectors_config=VectorParams(size=EMBED_DIM, distance=Distance.COSINE),
         )
-        console.print(f"[green]✓ Collection '{COLLECTION_NAME}' créée[/green]")
+        console.print(f"[green]✓ Collection '{collection_name}' créée[/green]")
 
 
 def _delete_file_chunks(client: QdrantClient, file_path: str):
@@ -155,8 +161,14 @@ def _delete_file_chunks(client: QdrantClient, file_path: str):
     )
 
 
-def _index_files(client: QdrantClient, file_paths: list[Path]) -> int:
+def _index_files(client: QdrantClient, file_paths: list[Path], vault_path: str = None, collection_name: str = None) -> int:
     """Indexe une liste de fichiers et retourne le nombre de chunks créés."""
+    if vault_path is None:
+        vault_path = VAULT_PATH
+    if collection_name is None:
+        collection_name = COLLECTION_NAME
+    
+    vault_base_path = Path(vault_path)
     points = []
     # Valider et filtrer les chemins existants
     valid_files = [f for f in file_paths if f.exists() and f.is_file()]
@@ -177,7 +189,7 @@ def _index_files(client: QdrantClient, file_paths: list[Path]) -> int:
             console.print(f"[yellow]⚠ Impossible de lire {md_file.name}: {e}[/yellow]")
             continue
 
-        tag = detect_tag(md_file)
+        tag = detect_tag(md_file, vault_base_path)
         chunks = chunk_text(text)
 
         for idx, chunk in enumerate(chunks):
@@ -193,7 +205,7 @@ def _index_files(client: QdrantClient, file_paths: list[Path]) -> int:
                         "file": md_file.name,
                         "file_path": str(md_file),
                         "tag": tag,
-                        "vault": str(Path(VAULT_PATH).name),
+                        "vault": vault_base_path.name,
                     },
                 )
             )
@@ -201,7 +213,7 @@ def _index_files(client: QdrantClient, file_paths: list[Path]) -> int:
     batch_size = 50
     for i in range(0, len(points), batch_size):
         client.upsert(
-            collection_name=COLLECTION_NAME,
+            collection_name=collection_name,
             points=points[i:i + batch_size]
         )
     return len(points)
@@ -238,24 +250,29 @@ def ingest_incremental(changed_files: list[str], deleted_files: list[str] | None
     console.print(f"\n[bold green]✅ Indexation incrémentale terminée : {count} chunks mis à jour ![/bold green]")
 
 
-def ingest_vault():
+def ingest_vault(vault_path: str = None, collection_name: str = None):
     """Indexation complète (première fois ou /index)."""
+    if vault_path is None:
+        vault_path = VAULT_PATH
+    if collection_name is None:
+        collection_name = COLLECTION_NAME
+    
     client = QdrantClient(url=QDRANT_URL)
 
     existing = [c.name for c in client.get_collections().collections]
-    if COLLECTION_NAME in existing:
-        console.print(f"[yellow]⚠ Collection '{COLLECTION_NAME}' existante → suppression et réindexation[/yellow]")
-        client.delete_collection(COLLECTION_NAME)
+    if collection_name in existing:
+        console.print(f"[yellow]⚠ Collection '{collection_name}' existante → suppression et réindexation[/yellow]")
+        client.delete_collection(collection_name)
 
-    _ensure_collection(client)
+    _ensure_collection(client, collection_name)
 
-    md_files = list(Path(VAULT_PATH).rglob("*.md"))
-    pdf_files = list(Path(VAULT_PATH).rglob("*.pdf"))
+    md_files = list(Path(vault_path).rglob("*.md"))
+    pdf_files = list(Path(vault_path).rglob("*.pdf"))
     all_files = md_files + pdf_files
     
     console.print(f"[cyan]📄 {len(md_files)} fichiers .md trouvés[/cyan]")
     console.print(f"[cyan]📄 {len(pdf_files)} fichiers .pdf trouvés[/cyan]")
-    console.print(f"[cyan]📄 Total: {len(all_files)} fichiers dans {VAULT_PATH}[/cyan]\n")
+    console.print(f"[cyan]📄 Total: {len(all_files)} fichiers dans {vault_path}[/cyan]\n")
 
     if not all_files:
         console.print("[red]❌ Aucun fichier .md ou .pdf trouvé ! Vérifie le chemin du vault.[/red]")
@@ -268,8 +285,8 @@ def ingest_vault():
         console.print("[yellow]⚠ Fichiers PDF trouvés mais aucune libraire PDF installée[/yellow]")
         console.print("[yellow]  → Installe avec: pip install pymupdf[/yellow]\n")
 
-    count = _index_files(client, all_files)
-    console.print(f"\n[bold green]✅ Indexation terminée : {count} chunks stockés dans '{COLLECTION_NAME}' ![/bold green]")
+    count = _index_files(client, all_files, vault_path, collection_name)
+    console.print(f"\n[bold green]✅ Indexation terminée : {count} chunks stockés dans '{collection_name}' ![/bold green]")
 
 
 if __name__ == "__main__":

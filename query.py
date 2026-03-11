@@ -352,7 +352,7 @@ def run_cli():
             console.print("[yellow]🔄 Lancement de l'indexation...[/yellow]")
             try:
                 from ingest import ingest_vault
-                ingest_vault()
+                ingest_vault(VAULT_PATH, COLLECTION_NAME)
                 console.print("[green]✓ Indexation terminée ![/green]")
             except Exception as e:
                 console.print(f"[red]❌ Erreur lors de l'indexation : {e}[/red]")
