@@ -1,4 +1,4 @@
-# query.py - CORHack RAG CLI (multi-vault) ✅ FIX UNICODE FINAL
+# query.py - CORHack RAG CLI (multi-vault) ✅ Avec support PDF
 import os
 import time
 import sys
@@ -52,6 +52,11 @@ HELP_TEXT = """
   [green]/vault[/green]     → Affiche le vault actif
   [green]/quit[/green]      → Quitter
 
+[bold cyan]Questions & Réponses :[/bold cyan]
+  Tape ta question et choisis le modèle :
+  [yellow]1[/yellow] ⚡ Llama 3.3 (Rapide & léger)
+  [yellow]2[/yellow] 🎯 GPT-OSS 120B (Précis & détaillé)
+
 [bold cyan]Graphe de Connaissances :[/bold cyan]
   [yellow]/graph[/yellow]              → Graphe de tous les concepts
   [yellow]/graph @Certification[/yellow] → Graphe filtré par tag
@@ -72,7 +77,11 @@ def get_embedding(text: str) -> list[float]:
     response = ollama.embeddings(model=EMBED_MODEL, prompt=text)
     return response["embedding"]
 
-def retrieve(query: str, top_k: int = 35, tag_filter: str | None = None) -> list:
+def retrieve(query: str, top_k: int = None, tag_filter: str | None = None) -> list:
+    # Par défaut : 40 chunks pour une meilleure couverture
+    if top_k is None:
+        top_k = 40
+    
     query_vec = get_embedding(query)
 
     filter_param = None
@@ -91,10 +100,15 @@ def retrieve(query: str, top_k: int = 35, tag_filter: str | None = None) -> list
     )
     return results.points
 
-def generate_answer(query: str, results: list, history: list) -> str:
-    results = results[:20]
+def generate_answer(query: str, results: list, history: list, model_config: dict = None) -> str:
+    # Utiliser le modèle précis par défaut si non spécifié
+    if model_config is None:
+        model_config = MODEL_PRECISE
+    
+    # Utiliser jusqu'à 35 contextes
+    results = results[:35]
     context = "\n\n---\n\n".join(
-        f"[Note {i+1}] {clean_text(r.payload['file'])} | {clean_text(r.payload['tag'])}\n{clean_text(r.payload['text'])}"
+        f"[Source: {clean_text(r.payload['file'])} | {clean_text(r.payload['tag'])}]\n{clean_text(r.payload['text'])}"
         for i, r in enumerate(results)
     )
 
@@ -106,11 +120,22 @@ def generate_answer(query: str, results: list, history: list) -> str:
     messages.append({"role": "user", "content": f"Question: {query}\n\n{context}"})
 
     llm_client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
-    console.print("[bold]🤖 Assistant : génération en cours...[/bold]")
+    model_label = model_config['label']
+    console.print(f"[bold]🤖 {model_label} : génération en cours...[/bold]")
+
+    temp = model_config['temperature']
+    max_tokens = model_config['max_tokens']
+    model_name = model_config['name']
 
     for attempt in range(5):
         try:
-            stream = llm_client.chat.completions.create(model=LLM_MODEL, messages=messages, stream=True)
+            stream = llm_client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                stream=True,
+                temperature=temp,
+                max_tokens=max_tokens
+            )
             full_response = ""
             for chunk in stream:
                 token = chunk.choices[0].delta.content or ""
@@ -128,9 +153,32 @@ def generate_answer(query: str, results: list, history: list) -> str:
 def show_status():
     """Affiche les stats de la base Qdrant."""
     try:
+        from qdrant_client.models import ScrollRequest
+        
         collection_info = client.get_collection(COLLECTION_NAME)
         console.print(f"[cyan]✓ Collection : {COLLECTION_NAME}[/cyan]")
         console.print(f"[cyan]  Points (chunks) : {collection_info.points_count}[/cyan]")
+        
+        # Compte les sources (MD vs PDF)
+        scroll_result = client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=1000,
+            with_payload=True
+        )
+        
+        md_count = 0
+        pdf_count = 0
+        for point in scroll_result[0]:
+            if 'file' in point.payload:
+                if point.payload['file'].endswith('.pdf'):
+                    pdf_count += 1
+                else:
+                    md_count += 1
+        
+        if md_count > 0:
+            console.print(f"[cyan]  📋 Fichiers Markdown : {md_count} chunks[/cyan]")
+        if pdf_count > 0:
+            console.print(f"[cyan]  📄 Fichiers PDF : {pdf_count} chunks[/cyan]")
     except Exception as e:
         console.print(f"[red]Erreur stats : {e}[/red]")
 
@@ -144,6 +192,24 @@ def parse_filter(user_input: str):
         question = match.group(3).strip()
         return tag, question
     return None, user_input.strip()
+
+
+def select_model():
+    """Dialogue interactif pour sélectionner le modèle."""
+    from rich.prompt import Prompt
+    
+    console.print("\n[bold cyan]Quel modèle veux-tu utiliser ?[/bold cyan]")
+    console.print(f"  [green]1[/green] {MODEL_FAST['label']}")
+    console.print(f"     └─ {MODEL_FAST['description']} ({MODEL_FAST['tps']} tps)")
+    console.print(f"  [green]2[/green] {MODEL_PRECISE['label']}")
+    console.print(f"     └─ {MODEL_PRECISE['description']} ({MODEL_PRECISE['tps']} tps)")
+    
+    choice = Prompt.ask("  Choix", choices=["1", "2"], default="2").strip()
+    
+    if choice == "1":
+        return "fast", MODEL_FAST
+    else:
+        return "precise", MODEL_PRECISE
 
 def show_tags():
     """Affiche tous les tags disponibles dans la collection."""
@@ -285,7 +351,11 @@ def run_cli():
                     continue
                 sources = list({clean_text(r.payload['file']) for r in results})
                 console.print(f"[dim]📎 Sources : {', '.join(sources)}[/dim]")
-                answer = generate_answer(question, results, history)
+                
+                # Sélectionner le modèle
+                model_type, model_config = select_model()
+                
+                answer = generate_answer(question, results, history, model_config)
                 history.append({"role": "user", "content": question})
                 history.append({"role": "assistant", "content": answer})
             except Exception as e:
