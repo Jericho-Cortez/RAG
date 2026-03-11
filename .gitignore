@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Environnement
+.env
+
+# Cache CORHack
+.corhack-cache*.json
+
+# Résultats quiz (données locales)
+quiz_results/
+
+# Graphes générés
+knowledge_graph_*.html
+knowledge_graph_*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store

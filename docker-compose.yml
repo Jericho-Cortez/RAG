@@ -1,12 +1,36 @@
 services:
+  # Base de données vectorielle
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: qdrant_rag
+    container_name: rag_qdrant
     restart: unless-stopped
     ports:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Application RAG (optionnel - pour déploiement full Docker)
+  rag:
+    build: .
+    container_name: rag_app
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+    volumes:
+      - ${VAULT_PATH:-.}:/data/vault:ro
+    stdin_open: true
+    tty: true
+    profiles:
+      - full
 
 volumes:
   qdrant_data:

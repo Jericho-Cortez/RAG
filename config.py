@@ -1,18 +1,21 @@
 # config.py - CORHack RAG Configuration
 import os
+from dotenv import load_dotenv
+
+# Charge .env si présent (pour la clé API, etc.)
+load_dotenv()
 
 VAULT_PATH       = os.getenv("VAULT_PATH", r"C:\Users\jbcde\Documents\Dossier Obsidian\Perso\EHE")
 COLLECTION_NAME  = os.getenv("COLLECTION_NAME", "ehe_notes")
 
 # Qdrant Vector DB
-QDRANT_URL       = "http://localhost:6333"
+QDRANT_URL       = os.getenv("QDRANT_URL", "http://localhost:6333")
 EMBED_MODEL      = "all-minilm:l6-v2"
 EMBED_DIM        = 384
 
 # LLM (Groq Cloud) - DUAL MODEL SETUP
-# Une seule clé API pour les 2 modèles !
 LLM_BASE_URL        = "https://api.groq.com/openai/v1"
-LLM_API_KEY         = "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"
+LLM_API_KEY         = os.getenv("GROQ_API_KEY", "")
 
 # ⚡ MODÈLE RAPIDE (par défaut)
 MODEL_FAST = {

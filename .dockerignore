@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+.env.local
+.corhack-cache*.json
+quiz_results/
+knowledge_graph_*.html
+knowledge_graph_*.json
+.gitignore
+.DS_Store
+Thumbs.db

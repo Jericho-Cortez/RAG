@@ -52,7 +52,7 @@ Réponds UNIQUEMENT avec la liste, sans explication."""
 
         try:
             response = self.llm_client.chat.completions.create(
-                model=LLM_MODEL,
+                model=MODEL_PRECISE["name"],
                 messages=[
                     {"role": "system", "content": "Tu es un extracteur de concepts techniques. Réponds uniquement avec une liste CSV."},
                     {"role": "user", "content": prompt}
