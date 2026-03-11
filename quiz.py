@@ -75,7 +75,7 @@ Réponds UNIQUEMENT avec le JSON, rien d'autre."""
 
     try:
         response = llm_client.chat.completions.create(
-            model=LLM_MODEL,
+            model=MODEL_PRECISE["name"],
             messages=[
                 {"role": "system", "content": "Tu es un générateur de QCM éducatif. Réponds uniquement en JSON valide."},
                 {"role": "user", "content": prompt}
