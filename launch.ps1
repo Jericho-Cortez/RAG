@@ -119,13 +119,17 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ── 6. Scan + index intelligent ───────────────────────────────
-Write-Step "Scan des fichiers .md dans '$VAULT_PATH'..."
+Write-Step "Scan des fichiers .md et .pdf dans '$VAULT_PATH'..."
 $mdFiles = Get-ChildItem -Path $VAULT_PATH -Recurse -Filter "*.md" -ErrorAction SilentlyContinue
+$pdfFiles = Get-ChildItem -Path $VAULT_PATH -Recurse -Filter "*.pdf" -ErrorAction SilentlyContinue
+$totalFiles = $mdFiles.Count + $pdfFiles.Count
 Write-Host "  📄 Fichiers .md trouvés : $($mdFiles.Count)" -ForegroundColor DarkCyan
+Write-Host "  📄 Fichiers .pdf trouvés : $($pdfFiles.Count)" -ForegroundColor DarkCyan
+Write-Host "  📄 Total : $totalFiles fichiers" -ForegroundColor DarkCyan
 
-if ($mdFiles.Count -eq 0) {
-    Write-Warn "Aucun fichier .md trouvé dans ce dossier !"
-    Write-Host "  Vérifie que le chemin contient bien des fichiers Markdown." -ForegroundColor DarkGray
+if ($totalFiles -eq 0) {
+    Write-Warn "Aucun fichier .md ou .pdf trouvé dans ce dossier !"
+    Write-Host "  Vérifie que le chemin contient bien des fichiers Markdown ou PDF." -ForegroundColor DarkGray
     $forceIndex = Read-Host "  Forcer quand même l'indexation ? (o/N)"
     if ($forceIndex -ne "o" -and $forceIndex -ne "O") { exit 1 }
 }
@@ -141,10 +145,11 @@ if (Test-Path $cacheFile) {
 }
 
 $currentFiles = @{}
-foreach ($file in $mdFiles) {
+$allFiles = @($mdFiles) + @($pdfFiles)  # Combine MD et PDF en arrays
+foreach ($file in $allFiles) {
     $mtime = $file.LastWriteTime.ToFileTime()
     $currentFiles[$file.FullName] = $mtime
-    if (-not $cache.PSObject.Properties.Name.Contains($file.FullName) -or
+    if (-not ($cache.PSObject.Properties.Name -contains $file.FullName) -or
         $cache.$($file.FullName) -ne $mtime) {
         $changedFiles += $file.FullName
     }
@@ -190,7 +195,7 @@ if (-not $collectionExists -or $chunkCount -eq 0 -or $changedFiles.Count -gt 0 -
     }
     Write-OK "Indexation terminée"
 } else {
-    Write-OK "Index à jour ($chunkCount chunks, $($mdFiles.Count) fichiers)"
+    Write-OK "Index à jour ($chunkCount chunks, $totalFiles fichiers)"
 }
 
 # ── 7. Lance le CLI ───────────────────────────────────────────

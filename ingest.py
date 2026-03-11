@@ -1,4 +1,5 @@
-# ingest.py
+# ingest.py - CORHack RAG Ingestion Engine
+# Support: Markdown (.md) + PDF (.pdf) avec extraction intelligente
 import re
 import os
 import json
@@ -11,11 +12,79 @@ from config import *
 from rich.console import Console
 from rich.progress import track
 
+# Support PDF avec fallback intelligent
+try:
+    import fitz  # PyMuPDF
+    PDF_SUPPORT = "pymupdf"
+except ImportError:
+    try:
+        import PyPDF2
+        PDF_SUPPORT = "pypdf2"
+    except ImportError:
+        PDF_SUPPORT = False
+
 console = Console()
 
 # Env vars écrasent config.py si définies
 VAULT_PATH      = os.getenv("VAULT_PATH", VAULT_PATH)
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", COLLECTION_NAME)
+
+
+def extract_pdf_text(pdf_path: Path) -> str:
+    """Extrait le texte d'un PDF avec la meilleure méthode disponible (PyMuPDF > PyPDF2)."""
+    if PDF_SUPPORT == "pymupdf":
+        return _extract_pdf_pymupdf(pdf_path)
+    elif PDF_SUPPORT == "pypdf2":
+        return _extract_pdf_pypdf2(pdf_path)
+    else:
+        console.print(f"[yellow]⚠ Aucune libraire PDF installée. Installe pymupdf ou PyPDF2[/yellow]")
+        return ""
+
+
+def _extract_pdf_pymupdf(pdf_path: Path) -> str:
+    """Extraction ultra-rapide avec PyMuPDF."""
+    try:
+        doc = fitz.open(pdf_path)
+        text_parts = []
+        
+        for page_num in range(doc.page_count):
+            page = doc[page_num]
+            text = page.get_text()
+            
+            # Nettoyer et formatter
+            if text.strip():
+                text = re.sub(r'\n\s*\n', '\n\n', text)  # Normaliser les sauts de ligne
+                text = re.sub(r' +', ' ', text)  # Réduire les espaces multiples
+                text_parts.append(f"[Page {page_num + 1}]\n{text.strip()}")
+        
+        doc.close()
+        return "\n\n".join(text_parts)
+    except Exception as e:
+        console.print(f"[yellow]⚠ Erreur PyMuPDF {pdf_path.name}: {e}[/yellow]")
+        return _extract_pdf_pypdf2(pdf_path) if PDF_SUPPORT == "pypdf2" else ""
+
+
+def _extract_pdf_pypdf2(pdf_path: Path) -> str:
+    """Extraction fallback avec PyPDF2."""
+    try:
+        import PyPDF2
+        text_parts = []
+        
+        with open(pdf_path, 'rb') as f:
+            reader = PyPDF2.PdfReader(f)
+            for page_num in range(len(reader.pages)):
+                page = reader.pages[page_num]
+                text = page.extract_text()
+                
+                if text.strip():
+                    text = re.sub(r'\n\s*\n', '\n\n', text)
+                    text = re.sub(r' +', ' ', text)
+                    text_parts.append(f"[Page {page_num + 1}]\n{text.strip()}")
+        
+        return "\n\n".join(text_parts)
+    except Exception as e:
+        console.print(f"[yellow]⚠ Erreur extraction PDF {pdf_path.name}: {e}[/yellow]")
+        return ""
 
 
 def detect_tag(file_path: Path) -> str:
@@ -97,7 +166,13 @@ def _index_files(client: QdrantClient, file_paths: list[Path]) -> int:
     
     for md_file in track(valid_files, description="[green]Indexation en cours..."):
         try:
-            text = md_file.read_text(encoding="utf-8", errors="ignore")
+            # Déterminer le format du fichier et extraire le texte
+            if md_file.suffix.lower() == '.pdf':
+                text = extract_pdf_text(md_file)
+                if not text:
+                    continue
+            else:  # .md
+                text = md_file.read_text(encoding="utf-8", errors="ignore")
         except Exception as e:
             console.print(f"[yellow]⚠ Impossible de lire {md_file.name}: {e}[/yellow]")
             continue
@@ -175,13 +250,25 @@ def ingest_vault():
     _ensure_collection(client)
 
     md_files = list(Path(VAULT_PATH).rglob("*.md"))
-    console.print(f"[cyan]📄 {len(md_files)} fichiers .md trouvés dans {VAULT_PATH}[/cyan]\n")
+    pdf_files = list(Path(VAULT_PATH).rglob("*.pdf"))
+    all_files = md_files + pdf_files
+    
+    console.print(f"[cyan]📄 {len(md_files)} fichiers .md trouvés[/cyan]")
+    console.print(f"[cyan]📄 {len(pdf_files)} fichiers .pdf trouvés[/cyan]")
+    console.print(f"[cyan]📄 Total: {len(all_files)} fichiers dans {VAULT_PATH}[/cyan]\n")
 
-    if not md_files:
-        console.print("[red]❌ Aucun fichier .md trouvé ! Vérifie le chemin du vault.[/red]")
+    if not all_files:
+        console.print("[red]❌ Aucun fichier .md ou .pdf trouvé ! Vérifie le chemin du vault.[/red]")
         return
 
-    count = _index_files(client, md_files)
+    if PDF_SUPPORT and pdf_files:
+        pdf_engine = "PyMuPDF ⚡" if PDF_SUPPORT == "pymupdf" else "PyPDF2"
+        console.print(f"[green]✓ Support PDF activé ({pdf_engine})[/green]\n")
+    elif pdf_files:
+        console.print("[yellow]⚠ Fichiers PDF trouvés mais aucune libraire PDF installée[/yellow]")
+        console.print("[yellow]  → Installe avec: pip install pymupdf[/yellow]\n")
+
+    count = _index_files(client, all_files)
     console.print(f"\n[bold green]✅ Indexation terminée : {count} chunks stockés dans '{COLLECTION_NAME}' ![/bold green]")
 
 
