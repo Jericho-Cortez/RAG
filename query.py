@@ -64,14 +64,21 @@ HELP_TEXT = """
   [yellow]/path SSH Firewall[/yellow]   → Chemin entre deux concepts
 
 [bold cyan]Mode Quiz :[/bold cyan]
-  [yellow]/quiz[/yellow]              → 10 questions aléatoires
-  [yellow]/quiz 20[/yellow]           → 20 questions aléatoires
-  [yellow]/quiz @Certification[/yellow] → Quiz sur un tag spécifique
+  [yellow]/quiz[/yellow]                    → 10 questions (mode normal)
+  [yellow]/quiz 20[/yellow]                → 20 questions
+  [yellow]/quiz @Certification[/yellow]    → Quiz sur un tag spécifique
+  [yellow]/quiz @Certification 10[/yellow] → 10 questions + tag
+  [yellow]/quiz @tag chrono[/yellow]       → Mode chronométré (30s/question)
+  [yellow]/quiz @tag revision[/yellow]     → Révise les erreurs précédentes
+  [yellow]/quiz @tag moyen[/yellow]        → Difficulté moyenne
+  [yellow]/quiz progressif[/yellow]        → Facile → Moyen → Difficile
+  [yellow]/history[/yellow]                → Historique avec statistiques
 
 [bold cyan]Exemples :[/bold cyan]
   /graph @Certification
   /path TCP Firewall
   /quiz @Certification 10
+  /quiz chrono 15
 """
 
 def get_embedding(text: str) -> list[float]:
@@ -357,23 +364,30 @@ def run_cli():
             except Exception as e:
                 console.print(f"[red]❌ Erreur lors de l'indexation : {e}[/red]")
         elif user_input.startswith("/quiz"):
-            # Parse la commande : /quiz [@tag] [nombre]
+            # Parse la commande : /quiz [@tag] [nombre] [mode] [difficulté]
             parts = user_input.split()
             tag_filter = None
             num_questions = 10
+            mode = "normal"  # normal, chrono, revision
+            difficulty = "progressif"  # progressif, uniforme, facile, moyen, difficile
 
             for part in parts[1:]:
                 if part.startswith("@"):
                     tag_filter = part[1:].strip('"')
                 elif part.isdigit():
                     num_questions = int(part)
+                elif part in ["chrono", "revision"]:
+                    mode = part
+                elif part in ["progressif", "uniforme", "facile", "moyen", "difficile"]:
+                    difficulty = part
 
             console.print(f"[cyan]🎯 Lancement du quiz : {num_questions} questions[/cyan]")
             if tag_filter:
-                console.print(f"[cyan]🏷️  Tag : {tag_filter}[/cyan]\n")
+                console.print(f"[cyan]🏷️  Tag : {tag_filter}[/cyan]")
+            console.print(f"[cyan]Mode : {mode} | Difficulté : {difficulty}[/cyan]\n")
 
             try:
-                run_quiz(tag_filter, num_questions)
+                run_quiz(tag_filter, num_questions, mode=mode, difficulty=difficulty)
             except Exception as e:
                 console.print(f"[red]❌ Erreur quiz : {e}[/red]")
 
