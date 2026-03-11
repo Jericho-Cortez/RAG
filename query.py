@@ -2,6 +2,7 @@
 import os
 import time
 import sys
+from collections import defaultdict
 import ollama
 from qdrant_client import QdrantClient
 from prompt_toolkit import PromptSession
@@ -10,6 +11,7 @@ from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.table import Table
 from rich import box
 from openai import OpenAI
 from config import *
@@ -44,7 +46,7 @@ HELP_TEXT = """
   [green]/switch[/green]    → Change vers un autre vault
   [green]/index[/green]     → Ré-indexe tout le vault
   [green]/status[/green]    → Affiche les stats de la base
-  [green]/tags[/green]      → Liste tous les tags disponibles
+  [green]/tags[/green]      → Liste tous les tags (triés par pertinence)
   [green]/quiz[/green]      → Lance un quiz de révision
   [green]/history[/green]   → Affiche l'historique des quiz
   [green]/graph[/green]     → Génère le graphe de connaissances
@@ -63,6 +65,10 @@ HELP_TEXT = """
   [yellow]/graph @Certification[/yellow] → Graphe filtré par tag
   [yellow]/path SSH Firewall[/yellow]   → Chemin entre deux concepts
 
+[bold cyan]Tags :[/bold cyan]
+  [yellow]/tags[/yellow]               → Tous les tags (triés par chunks)
+  [yellow]/tags Dictionnaire[/yellow]  → Filtrer par mot-clé
+
 [bold cyan]Mode Quiz :[/bold cyan]
   [yellow]/quiz[/yellow]                    → 10 questions (mode normal)
   [yellow]/quiz 20[/yellow]                → 20 questions
@@ -75,6 +81,8 @@ HELP_TEXT = """
   [yellow]/history[/yellow]                → Historique avec statistiques
 
 [bold cyan]Exemples :[/bold cyan]
+  /tags
+  /tags Jour
   /graph @Certification
   /path TCP Firewall
   /quiz @Certification 10
@@ -272,31 +280,93 @@ def switch_vault():
     console.print("[green]✓ Vault changé avec succès ![/green]\n")
     return True
 
-def show_tags():
-    """Affiche tous les tags disponibles dans la collection."""
+def show_tags(search_keyword: str = None):
+    """Affiche les tags avec statistiques, triés par pertinence."""
     try:
-        # Récupère un échantillon de points pour extraire les tags uniques
         from qdrant_client.models import ScrollRequest
         
+        # Récupère tous les points pour extraire les statistiques de tags
         scroll_result = client.scroll(
             collection_name=COLLECTION_NAME,
-            limit=1000,
+            limit=10000,
             with_payload=True
         )
         
-        tags = set()
+        # Agrégation des statistiques par tag
+        tag_stats = defaultdict(lambda: {"count": 0, "files": set()})
+        
         for point in scroll_result[0]:
             if 'tag' in point.payload:
-                tags.add(clean_text(point.payload['tag']))
+                tag = clean_text(point.payload['tag'])
+                tag_stats[tag]["count"] += 1
+                if 'file' in point.payload:
+                    tag_stats[tag]["files"].add(point.payload['file'])
         
-        if tags:
-            console.print("[bold cyan]📑 Tags disponibles :[/bold cyan]")
-            for tag in sorted(tags):
-                console.print(f"  [green]@{tag}[/green]")
-        else:
-            console.print("[yellow]⚠ Aucun tag trouvé[/yellow]")
+        if not tag_stats:
+            console.print("[yellow]⚠️ Aucun tag trouvé[/yellow]")
+            return
+        
+        # Filtre si recherche
+        if search_keyword:
+            tag_stats = {k: v for k, v in tag_stats.items() if search_keyword.lower() in k.lower()}
+            if not tag_stats:
+                console.print(f"[yellow]⚠️ Aucun tag trouvé pour '{search_keyword}'[/yellow]")
+                return
+        
+        # Trie par pertinence (nombre de chunks décroissant)
+        sorted_tags = sorted(tag_stats.items(), key=lambda x: x[1]["count"], reverse=True)
+        
+        # Tableau de résultats
+        table = Table(title="📑 Tags par pertinence", box=box.ROUNDED, style="cyan")
+        table.add_column("Rang", style="dim", width=5)
+        table.add_column("Tag", style="bold yellow")
+        table.add_column("Chunks", style="green", width=10)
+        table.add_column("Fichiers", style="blue", width=12)
+        table.add_column("Pertinence", style="magenta", width=15)
+        
+        total_chunks = sum(v["count"] for v in tag_stats.values())
+        
+        for idx, (tag, stats) in enumerate(sorted_tags, 1):
+            chunk_count = stats["count"]
+            file_count = len(stats["files"])
+            percentage = (chunk_count / total_chunks) * 100
+            
+            # Barre de pertinence
+            bar_length = 10
+            filled = int((percentage / 100) * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            pertinence = f"{bar} {percentage:.1f}%"
+            
+            # Emojis de pertinence
+            if percentage >= 20:
+                rank_emoji = "🔥"
+            elif percentage >= 10:
+                rank_emoji = "⭐"
+            else:
+                rank_emoji = "📌"
+            
+            table.add_row(
+                f"{rank_emoji} {idx}",
+                f"@{tag}",
+                str(chunk_count),
+                str(file_count),
+                pertinence
+            )
+        
+        console.print(table)
+        
+        # Résumé
+        console.print(f"\n[dim]Total : {len(sorted_tags)} tags | {total_chunks} chunks[/dim]")
+        
+        # Suggestions de commandes
+        top_tags = [tag for tag, _ in sorted_tags[:3]]
+        if top_tags:
+            console.print(f"\n[bold cyan]💡 Suggestions :[/bold cyan]")
+            for tag in top_tags:
+                console.print(f"  [yellow]/quiz @{tag}[/yellow] → Quiz sur {tag}")
+    
     except Exception as e:
-        console.print(f"[red]Erreur : {e}[/red]")
+        console.print(f"[red]❌ Erreur : {e}[/red]")
 
 def run_cli():
     history = []
@@ -327,8 +397,13 @@ def run_cli():
         if user_input == "/quit":
             console.print("[yellow]👋 À bientôt ![/yellow]")
             break
-        elif user_input == "/tags":
-            show_tags()
+        elif user_input.startswith("/tags"):
+            # Parse : /tags ou /tags @keyword
+            parts = user_input.split()
+            search_keyword = None
+            if len(parts) > 1:
+                search_keyword = parts[1].lstrip("@")
+            show_tags(search_keyword)
         elif user_input == "/help":
             console.print(HELP_TEXT)
         elif user_input == "/status":
