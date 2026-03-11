@@ -127,8 +127,23 @@ def chunk_text(text: str, max_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERL
 
 
 def get_embedding(text: str) -> list[float]:
-    response = ollama.embeddings(model=EMBED_MODEL, prompt=text)
-    return response["embedding"]
+    """Obtient l'embedding d'un texte avec troncature préventive."""
+    # Troncature préventive : ~4 chars = 1 token, limite = 256 tokens
+    # Garder une marge : max ~800 caractères pour être sûr
+    MAX_CHARS = 800
+    if len(text) > MAX_CHARS:
+        text = text[:MAX_CHARS]
+    
+    try:
+        response = ollama.embeddings(model=EMBED_MODEL, prompt=text)
+        return response["embedding"]
+    except Exception as e:
+        if "exceeds the context length" in str(e) or "context" in str(e).lower():
+            # Fallback : réduire drastiquement et réessayer
+            text = text[:400]
+            response = ollama.embeddings(model=EMBED_MODEL, prompt=text)
+            return response["embedding"]
+        raise
 
 
 def _stable_id(file_path: str, chunk_index: int) -> int:
@@ -195,20 +210,24 @@ def _index_files(client: QdrantClient, file_paths: list[Path], vault_path: str =
         for idx, chunk in enumerate(chunks):
             if len(chunk.strip()) < 30:
                 continue
-            embedding = get_embedding(chunk)
-            points.append(
-                PointStruct(
-                    id=_stable_id(str(md_file), idx),
-                    vector=embedding,
-                    payload={
-                        "text": chunk,
-                        "file": md_file.name,
-                        "file_path": str(md_file),
-                        "tag": tag,
-                        "vault": vault_base_path.name,
-                    },
+            try:
+                embedding = get_embedding(chunk)
+                points.append(
+                    PointStruct(
+                        id=_stable_id(str(md_file), idx),
+                        vector=embedding,
+                        payload={
+                            "text": chunk,
+                            "file": md_file.name,
+                            "file_path": str(md_file),
+                            "tag": tag,
+                            "vault": vault_base_path.name,
+                        },
+                    )
                 )
-            )
+            except Exception as e:
+                console.print(f"[yellow]⚠ Erreur embedding pour {md_file.name} chunk {idx}: {str(e)[:60]}[/yellow]")
+                continue
 
     batch_size = 50
     for i in range(0, len(points), batch_size):

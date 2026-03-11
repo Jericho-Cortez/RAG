@@ -38,8 +38,9 @@ MODEL_PRECISE = {
 LLM_MODEL_DEFAULT = "precise"  # "fast" ou "precise"
 
 # Chunking (pour Markdown ET PDF)
-CHUNK_SIZE          = 300
-CHUNK_OVERLAP       = 60
+# Réduit à 200 pour respecter la limite du modèle d'embedding (all-minilm:l6-v2 = ~256 tokens)
+CHUNK_SIZE          = 200
+CHUNK_OVERLAP       = 40
 
 # Support des formats
 # - Markdown (.md) : traités par défaut
