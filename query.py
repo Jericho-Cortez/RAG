@@ -41,6 +41,7 @@ def clean_text(text):
 HELP_TEXT = """
 [bold cyan]Commandes disponibles :[/bold cyan]
   [green]/help[/green]      → Affiche cette aide
+  [green]/switch[/green]    → Change vers un autre vault
   [green]/index[/green]     → Ré-indexe tout le vault
   [green]/status[/green]    → Affiche les stats de la base
   [green]/tags[/green]      → Liste tous les tags disponibles
@@ -211,6 +212,59 @@ def select_model():
     else:
         return "precise", MODEL_PRECISE
 
+
+def switch_vault():
+    """Change vers un nouveau vault."""
+    from rich.prompt import Prompt
+    from pathlib import Path
+    
+    console.print("\n[bold cyan]Changement de Vault[/bold cyan]")
+    new_path = Prompt.ask("  Nouveau chemin du vault").strip()
+    
+    # Valider le chemin
+    path_obj = Path(new_path)
+    if not path_obj.exists():
+        console.print(f"[red]❌ Dossier inexistant : {new_path}[/red]")
+        return False
+    
+    if not path_obj.is_dir():
+        console.print(f"[red]❌ Ce n'est pas un dossier : {new_path}[/red]")
+        return False
+    
+    # Vérifier qu'il y a au moins des fichiers .md ou .pdf
+    md_files = list(path_obj.rglob("*.md"))
+    pdf_files = list(path_obj.rglob("*.pdf"))
+    
+    if not md_files and not pdf_files:
+        console.print(f"[yellow]⚠ Aucun fichier .md ou .pdf trouvé dans ce dossier[/yellow]")
+        force = Prompt.ask("  Forcer le changement quand même ? (o/N)", choices=["o", "n"], default="n")
+        if force != "o":
+            return False
+    
+    # Mettre à jour les variables globales
+    global VAULT_PATH, COLLECTION_NAME, client
+    
+    old_path = VAULT_PATH
+    old_collection = COLLECTION_NAME
+    
+    VAULT_PATH = str(path_obj)
+    vault_name = path_obj.name.replace(' ', '_').replace('(', '').replace(')', '')
+    COLLECTION_NAME = f"obsidian_{vault_name}"
+    
+    console.print(f"[green]✓ Nouveau vault :[/green] [bold]{vault_name}[/bold]")
+    console.print(f"[green]✓ Chemin :[/green] {VAULT_PATH}")
+    console.print(f"[green]✓ Collection :[/green] {COLLECTION_NAME}")
+    
+    # Vérifier si la collection existe
+    try:
+        collection_info = client.get_collection(COLLECTION_NAME)
+        console.print(f"[cyan]📊 Collection existante : {collection_info.points_count} chunks[/cyan]")
+    except Exception as e:
+        console.print(f"[yellow]⚠ Collection inexistante - indexe d'abord avec /index[/yellow]")
+    
+    console.print("[green]✓ Vault changé avec succès ![/green]\n")
+    return True
+
 def show_tags():
     """Affiche tous les tags disponibles dans la collection."""
     try:
@@ -275,6 +329,21 @@ def run_cli():
         elif user_input == "/vault":
             console.print(f"[cyan]📁 Vault actif : {clean_text(VAULT_PATH)}[/cyan]")
             console.print(f"[cyan]🗄  Collection  : {COLLECTION_NAME}[/cyan]")
+        elif user_input == "/switch":
+            if switch_vault():
+                # Recharger le panel d'info avec le nouveau vault
+                vault_name = os.path.basename(VAULT_PATH.rstrip("\\/"))
+                console.print(Panel(
+                    f"[bold white]CORHack RAG[/bold white]\n"
+                    f"[cyan]Vault actif :[/cyan] [bold]{clean_text(vault_name)}[/bold]\n"
+                    f"[dim]Chemin complet :[/dim] [gray]{clean_text(VAULT_PATH.replace('\\', '/'))}[/gray]\n"
+                    f"[dim]Collection  : {COLLECTION_NAME}[/dim]\n"
+                    f"[dim]Tape [bold]/help[/bold] pour les commandes[/dim]",
+                    box=box.DOUBLE_EDGE,
+                    style="bold cyan"
+                ))
+                history.clear()  # Effacer l'historique du vault précédent
+                console.print("[dim]📝 Historique effacé[/dim]")
         elif user_input == "/clear":
             history.clear()
             console.clear()
