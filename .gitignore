@@ -10,15 +10,12 @@ build/
 # Environnement
 .env
 
-# Cache CORHack
+# Cache files
+.cache/
 .corhack-cache*.json
 
-# Résultats quiz (données locales)
-quiz_results/
-
-# Graphes générés
-knowledge_graph_*.html
-knowledge_graph_*.json
+# Generated output (keep directory, not files)
+output/
 
 # IDE
 .vscode/

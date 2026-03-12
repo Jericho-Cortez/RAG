@@ -4,7 +4,12 @@ import re
 import os
 import json
 import hashlib
+import sys
 from pathlib import Path
+
+# Add parent directory to path for root config.py imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 import ollama

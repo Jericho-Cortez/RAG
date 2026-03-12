@@ -2,9 +2,14 @@
 import random
 import json
 import time
+import sys
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
+
+# Add parent directory to path for root config.py imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from qdrant_client import QdrantClient
 from rich.console import Console
 from rich.prompt import Prompt

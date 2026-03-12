@@ -1,9 +1,14 @@
 # knowledge_graph.py - Module Graphe de Connaissances
 import re
 import json
+import sys
 from pathlib import Path
 from collections import defaultdict, Counter
 from typing import List, Tuple, Dict, Set
+
+# Add parent directory to path for root config.py imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import networkx as nx
 from pyvis.network import Network
 from qdrant_client import QdrantClient

@@ -3,6 +3,11 @@ import os
 import time
 import sys
 from collections import defaultdict
+from pathlib import Path
+
+# Add parent directory to path for root config.py imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import ollama
 from qdrant_client import QdrantClient
 from prompt_toolkit import PromptSession
@@ -15,8 +20,8 @@ from rich.table import Table
 from rich import box
 from openai import OpenAI
 from config import *
-from quiz import run_quiz, show_quiz_history
-from knowledge_graph import run_graph_command, run_path_command, KnowledgeGraph
+from src.quiz import run_quiz, show_quiz_history
+from src.knowledge_graph import run_graph_command, run_path_command, KnowledgeGraph
 
 
 # FIX UTF-8 STDOUT
