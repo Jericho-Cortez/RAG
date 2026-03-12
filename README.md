@@ -45,16 +45,19 @@ ollama pull all-minilm:l6-v2
 docker compose up -d qdrant
 
 # 6. Lance CORHack
-python query.py
+# Windows :
+.\launch.ps1
+# Linux/Mac :
+python src/query.py
 ```
 
-### Windows (raccourci PowerShell)
+### Windows (raccourci PowerShell recommandé)
 
 ```powershell
 .\launch.ps1
 ```
 
-Le launcher gère automatiquement Docker, Qdrant, Ollama et les dépendances.
+Le launcher gère automatiquement Docker, Qdrant, Ollama, les dépendances et l'indexation.
 
 ## Commandes
 
@@ -76,14 +79,48 @@ Le launcher gère automatiquement Docker, Qdrant, Ollama et les dépendances.
 ## Architecture
 
 ```
+RAG-Obsidian/
+├── config.py               # Configuration centralisée
+├── launch.ps1              # Wrapper principal
+├── docker-compose.yml
+├── requirements.txt
+│
+├── src/                    # Code source modulaire
+│   ├── __init__.py
+│   ├── query.py            # CLI principal
+│   ├── ingest.py           # Indexation (MD + PDF)
+│   ├── quiz.py             # Module quiz éducatif
+│   └── knowledge_graph.py  # Graphe de connaissances
+│
+├── scripts/                # Scripts de lancement
+│   └── launch.ps1          # Launcher avec auto-config
+│
+├── output/                 # Fichiers générés
+│   ├── knowledge_graphs/   # HTML/JSON graphes
+│   └── quiz_results/       # JSON résultats quiz
+│
+├── .cache/                 # Cache (ignoré Git)
+│   └── .corhack-cache-*.json
+│
+├── lib/                    # Dépendances front-end
+│   ├── bindings/
+│   ├── tom-select/
+│   └── vis-9.1.2/
+│
+└── .venv/                 # Environnement virtuel
+```
+
+### Flux de données
+
+```
 Obsidian Vault (.md/.pdf)
         |
-   [ingest.py] ──► Ollama (all-minilm:l6-v2) ──► Qdrant (vectors)
+   [src/ingest.py] ──► Ollama (all-minilm:l6-v2) ──► Qdrant (vecteurs)
         |
-   [query.py] ──► Groq Cloud (LLM) ──► Réponse
+   [src/query.py] ──► Groq Cloud (LLM) ──► Réponse
         |
-   [quiz.py] ──► Questions générées par LLM
-   [knowledge_graph.py] ──► Graphe interactif HTML
+   [src/quiz.py] ──► Questions générées par LLM
+   [src/knowledge_graph.py] ──► Graphe interactif
 ```
 
 ## Variables d'environnement
