@@ -6,6 +6,8 @@ import json
 import hashlib
 import sys
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Tuple
 
 # Add parent directory to path for root config.py imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -203,6 +205,11 @@ def _index_files(client: QdrantClient, file_paths: list[Path], vault_path: str =
                 text = extract_pdf_text(md_file)
                 if not text:
                     continue
+            elif md_file.suffix.lower() == '.py':
+                # Lire le script Python avec les commentaires
+                text = md_file.read_text(encoding="utf-8", errors="ignore")
+                # Ajouter un header pour identifier le fichier comme Python
+                text = f"# Python Script: {md_file.name}\n\n{text}"
             else:  # .md
                 text = md_file.read_text(encoding="utf-8", errors="ignore")
         except Exception as e:
@@ -234,13 +241,104 @@ def _index_files(client: QdrantClient, file_paths: list[Path], vault_path: str =
                 console.print(f"[yellow]⚠ Erreur embedding pour {md_file.name} chunk {idx}: {str(e)[:60]}[/yellow]")
                 continue
 
-    batch_size = 50
+    batch_size = 200  # 🚀 Augmenté de 50 à 200 pour mieux paralyéliser
     for i in range(0, len(points), batch_size):
         client.upsert(
             collection_name=collection_name,
             points=points[i:i + batch_size]
         )
     return len(points)
+
+
+def _process_single_file(args: Tuple) -> list[PointStruct]:
+    """Traite un fichier individuellement (pour parallélisation)."""
+    md_file, vault_base_path, vault_path, collection_name = args
+    
+    try:
+        if md_file.suffix.lower() == '.pdf':
+            text = extract_pdf_text(md_file)
+            if not text:
+                return []
+        elif md_file.suffix.lower() == '.py':
+            # Lire le script Python avec les commentaires
+            text = md_file.read_text(encoding="utf-8", errors="ignore")
+            # Ajouter un header pour identifier le fichier comme Python
+            text = f"# Python Script: {md_file.name}\n\n{text}"
+        else:  # .md
+            text = md_file.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return []
+    
+    tag = detect_tag(md_file, vault_base_path)
+    chunks = chunk_text(text)
+    points = []
+    
+    for idx, chunk in enumerate(chunks):
+        if len(chunk.strip()) < 30:
+            continue
+        try:
+            embedding = get_embedding(chunk)
+            points.append(
+                PointStruct(
+                    id=_stable_id(str(md_file), idx),
+                    vector=embedding,
+                    payload={
+                        "text": chunk,
+                        "file": md_file.name,
+                        "file_path": str(md_file),
+                        "tag": tag,
+                        "vault": vault_base_path.name,
+                    },
+                )
+            )
+        except Exception:
+            continue
+    
+    return points
+
+
+def _index_files_parallel(client: QdrantClient, file_paths: list[Path], vault_path: str = None, collection_name: str = None, max_workers: int = 4) -> int:
+    """🚀 Version parallélisée : indexe plusieurs fichiers en parallèle.
+    
+    Args:
+        max_workers: Nombre de fichiers traités en même temps (4-8 recommandé)
+    """
+    if vault_path is None:
+        vault_path = VAULT_PATH
+    if collection_name is None:
+        collection_name = COLLECTION_NAME
+    
+    vault_base_path = Path(vault_path)
+    valid_files = [f for f in file_paths if f.exists() and f.is_file()]
+    
+    if not valid_files:
+        console.print("[yellow]⚠ Aucun fichier valide à indexer[/yellow]")
+        return 0
+    
+    all_points = []
+    task_args = [(f, vault_base_path, vault_path, collection_name) for f in valid_files]
+    
+    # Traiter les fichiers en parallèle
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_process_single_file, args): args[0].name for args in task_args}
+        
+        for future in track(as_completed(futures), total=len(futures), description="[green]Indexation parallèle..."):
+            try:
+                points = future.result()
+                all_points.extend(points)
+            except Exception as e:
+                filename = futures[future]
+                console.print(f"[yellow]⚠ Erreur pour {filename}: {str(e)[:60]}[/yellow]")
+    
+    # Uploader en batches optimisés
+    batch_size = 200
+    for i in range(0, len(all_points), batch_size):
+        client.upsert(
+            collection_name=collection_name,
+            points=all_points[i:i + batch_size]
+        )
+    
+    return len(all_points)
 
 
 def ingest_incremental(changed_files: list[str], deleted_files: list[str] | None = None):
@@ -270,7 +368,7 @@ def ingest_incremental(changed_files: list[str], deleted_files: list[str] | None
     valid_count = len([f for f in file_paths if f.exists()])
     console.print(f"[cyan]📄 {valid_count} fichier(s) valide(s) à réindexer[/cyan]")
 
-    count = _index_files(client, file_paths)
+    count = _index_files_parallel(client, file_paths, max_workers=6)  # 🚀 Parallélisé
     console.print(f"\n[bold green]✅ Indexation incrémentale terminée : {count} chunks mis à jour ![/bold green]")
 
 
@@ -292,24 +390,29 @@ def ingest_vault(vault_path: str = None, collection_name: str = None):
 
     md_files = list(Path(vault_path).rglob("*.md"))
     pdf_files = list(Path(vault_path).rglob("*.pdf"))
-    all_files = md_files + pdf_files
+    py_files = list(Path(vault_path).rglob("*.py"))
+    all_files = md_files + pdf_files + py_files
     
     console.print(f"[cyan]📄 {len(md_files)} fichiers .md trouvés[/cyan]")
     console.print(f"[cyan]📄 {len(pdf_files)} fichiers .pdf trouvés[/cyan]")
+    console.print(f"[cyan]📚 {len(py_files)} fichiers .py trouvés[/cyan]")
     console.print(f"[cyan]📄 Total: {len(all_files)} fichiers dans {vault_path}[/cyan]\n")
 
     if not all_files:
-        console.print("[red]❌ Aucun fichier .md ou .pdf trouvé ! Vérifie le chemin du vault.[/red]")
+        console.print("[red]❌ Aucun fichier .md, .pdf ou .py trouvé ! Vérifie le chemin du vault.[/red]")
         return
 
     if PDF_SUPPORT and pdf_files:
         pdf_engine = "PyMuPDF ⚡" if PDF_SUPPORT == "pymupdf" else "PyPDF2"
-        console.print(f"[green]✓ Support PDF activé ({pdf_engine})[/green]\n")
+        console.print(f"[green]✓ Support PDF activé ({pdf_engine})[/green]")
     elif pdf_files:
         console.print("[yellow]⚠ Fichiers PDF trouvés mais aucune libraire PDF installée[/yellow]")
-        console.print("[yellow]  → Installe avec: pip install pymupdf[/yellow]\n")
+        console.print("[yellow]  → Installe avec: pip install pymupdf[/yellow]")
+    
+    if py_files:
+        console.print(f"[green]✓ Support Python activé ({len(py_files)} scripts)\n[/green]")
 
-    count = _index_files(client, all_files, vault_path, collection_name)
+    count = _index_files_parallel(client, all_files, vault_path, collection_name, max_workers=8)  # 🚀 Parallélisé
     console.print(f"\n[bold green]✅ Indexation terminée : {count} chunks stockés dans '{collection_name}' ![/bold green]")
 
 

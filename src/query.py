@@ -23,6 +23,22 @@ from config import *
 from src.quiz import run_quiz, show_quiz_history
 from src.knowledge_graph import run_graph_command, run_path_command, KnowledgeGraph
 
+# Import des constantes d'optimisation
+from config import MAX_CHUNKS_RETRIEVE, MAX_CHUNKS_CONTEXT, MAX_CHUNK_LENGTH, TOKEN_ESTIMATE_RATIO
+
+# Import du générateur d'exercices SOC
+try:
+    from SOC_LAB.exo_soc_generator import (
+        get_random_exercise, 
+        format_exercise_display, 
+        get_exercise_by_difficulty, 
+        list_all_exercises,
+        get_exercise_by_id
+    )
+    SOC_LAB_AVAILABLE = True
+except ImportError:
+    SOC_LAB_AVAILABLE = False
+
 
 # FIX UTF-8 STDOUT
 sys.stdout.reconfigure(encoding='utf-8')
@@ -56,9 +72,18 @@ HELP_TEXT = """
   [green]/history[/green]   → Affiche l'historique des quiz
   [green]/graph[/green]     → Génère le graphe de connaissances
   [green]/path[/green]      → Trouve le chemin entre 2 concepts
+  [green]/exo_soc[/green]   → 🆕 Génère un exercice SOC aléatoire
   [green]/clear[/green]     → Efface l'historique de session
   [green]/vault[/green]     → Affiche le vault actif
   [green]/quit[/green]      → Quitter
+
+[bold cyan]Exercices SOC :[/bold cyan]
+  [yellow]/exo_soc[/yellow]                    → Exercice aléatoire (Tous niveaux)
+  [yellow]/exo_soc debutant[/yellow]          → Exercice niveau Débutant
+  [yellow]/exo_soc intermediaire[/yellow]     → Exercice niveau Intermédiaire
+  [yellow]/exo_soc avance[/yellow]            → Exercice niveau Avancé
+  [yellow]/exo_soc show-solution[/yellow]     → Affiche la solution du dernier exo
+  [yellow]/exo_soc list[/yellow]              → Liste tous les exercices disponibles
 
 [bold cyan]Questions & Réponses :[/bold cyan]
   Tape ta question et choisis le modèle :
@@ -98,10 +123,38 @@ def get_embedding(text: str) -> list[float]:
     response = ollama.embeddings(model=EMBED_MODEL, prompt=text)
     return response["embedding"]
 
+def detect_long_query(query: str) -> tuple[bool, list[str]]:
+    """🔍 Détecte si requête dépasse ~1500 tokens et la fragmente.**
+    Retourne: (est_longue, fragments)
+    """
+    est_tokens = len(query) // TOKEN_ESTIMATE_RATIO
+    
+    if est_tokens <= 300:
+        return False, [query]
+    
+    # Fragmenter aux points d'arrêt naturels (phrases, points-virgules, points)
+    import re
+    fragments = re.split(r'(?<=[.!?])\s+|(?<=;)\s+', query)
+    
+    chunks = []
+    current = ""
+    for frag in fragments:
+        if (len(current) + len(frag)) // TOKEN_ESTIMATE_RATIO > 300:
+            if current:
+                chunks.append(current.strip())
+            current = frag
+        else:
+            current += (" " if current else "") + frag
+    if current:
+        chunks.append(current.strip())
+    
+    console.print(f"[yellow]📋 Requête longue → fragmentée en {len(chunks)} sous-questions[/yellow]")
+    return True, chunks if len(chunks) > 1 else [query]
+
 def retrieve(query: str, top_k: int = None, tag_filter: str | None = None) -> list:
-    # Par défaut : 40 chunks pour une meilleure couverture
+    # Par défaut : 25 chunks (optimisé pour limites contexte Groq)
     if top_k is None:
-        top_k = 40
+        top_k = MAX_CHUNKS_RETRIEVE
     
     query_vec = get_embedding(query)
 
@@ -126,12 +179,30 @@ def generate_answer(query: str, results: list, history: list, model_config: dict
     if model_config is None:
         model_config = MODEL_PRECISE
     
-    # Utiliser jusqu'à 35 contextes
-    results = results[:35]
-    context = "\n\n---\n\n".join(
-        f"[Source: {clean_text(r.payload['file'])} | {clean_text(r.payload['tag'])}]\n{clean_text(r.payload['text'])}"
-        for i, r in enumerate(results)
-    )
+    # 🚀 OPTIMISATION : limiter à MAX_CHUNKS_CONTEXT et tronquer chaque chunk
+    results = results[:MAX_CHUNKS_CONTEXT]
+    context_parts = []
+    total_chars = 0
+    
+    for i, r in enumerate(results):
+        source = clean_text(r.payload['file'])
+        tag = clean_text(r.payload['tag'])
+        text = clean_text(r.payload['text'])
+        
+        # Tronquer si dépasse MAX_CHUNK_LENGTH
+        if len(text) > MAX_CHUNK_LENGTH:
+            text = text[:MAX_CHUNK_LENGTH] + "..."
+        
+        chunk = f"[Source: {source} | {tag}]\n{text}"
+        context_parts.append(chunk)
+        total_chars += len(chunk)
+    
+    context = "\n\n---\n\n".join(context_parts)
+    
+    # ⚠️ Avertir si contexte trop gros (dépasserait ~32k tokens)
+    est_tokens = (len(clean_text(SYSTEM_PROMPT)) + len(query) + total_chars) // TOKEN_ESTIMATE_RATIO
+    if est_tokens > 6000:
+        console.print(f"[yellow]⚠️  Contexte volumineux (~{est_tokens} tokens estimés). Réponse peut être tronquée.[/yellow]")
 
     query = clean_text(query)
     context = clean_text(context)
@@ -388,6 +459,9 @@ def run_cli():
     ))
 
     session = PromptSession(style=STYLE)
+    
+    # Variable pour stocker le dernier exercice générés
+    last_exercise = None
 
     while True:
         try:
@@ -503,24 +577,112 @@ def run_cli():
             except Exception as e:
                 console.print(f"[red]❌ Erreur : {e}[/red]")
 
+        elif user_input.startswith("/exo_soc"):
+            # Commande: /exo_soc [debutant|intermediaire|avance|show-solution|list|ID]
+            if not SOC_LAB_AVAILABLE:
+                console.print("[red]❌ SOC Lab non disponible. Vérifie que exo_soc_generator.py existe.[/red]")
+                continue
+            
+            parts = user_input.split()
+            command = parts[1].lower() if len(parts) > 1 else None
+            
+            try:
+                if command == "list":
+                    # Afficher tous les exercices
+                    console.print(Panel(
+                        list_all_exercises(),
+                        title="📚 Exercices Disponibles",
+                        style="cyan"
+                    ))
+                elif command == "show-solution":
+                    # Afficher la solution du dernier exercice (gardé en mémoire)
+                    if last_exercise:
+                        console.print(Panel(
+                            format_exercise_display(last_exercise, show_solution=True),
+                            title="✅ Solution de l'Exercice",
+                            style="green"
+                        ))
+                    else:
+                        console.print("[yellow]⚠️  Aucun exercice en mémoire. Fais /exo_soc d'abord.[/yellow]")
+                elif command in ["debutant", "intermediaire", "avance"]:
+                    # Exercice de niveau spécifique
+                    exercise = get_exercise_by_difficulty(
+                        "Débutant" if command == "debutant" else
+                        "Intermédiaire" if command == "intermediaire" else
+                        "Avancé"
+                    )
+                    last_exercise = exercise
+                    console.print(Panel(
+                        format_exercise_display(exercise),
+                        title=f"🎯 Exercice {exercise['difficulty']}",
+                        style="yellow"
+                    ))
+                    console.print("[dim]Tape /exo_soc show-solution pour voir la solution[/dim]")
+                elif command and "_" in command:
+                    # Chercher par ID (format: RANSOMWARE_001, LATERAL_001, etc.)
+                    exercise = get_exercise_by_id(command)
+                    if "error" not in exercise:
+                        last_exercise = exercise
+                        console.print(Panel(
+                            format_exercise_display(exercise),
+                            title=f"🎯 Exercice ID: {exercise['id']}",
+                            style="blue"
+                        ))
+                        console.print("[dim]Tape /exo_soc show-solution pour voir la solution[/dim]")
+                    else:
+                        console.print(f"[red]{exercise['error']}[/red]")
+                else:
+                    # Exercice aléatoire
+                    exercise = get_random_exercise()
+                    last_exercise = exercise
+                    console.print(Panel(
+                        format_exercise_display(exercise),
+                        title=f"🎯 Exercice Aléatoire - {exercise['difficulty']}",
+                        style="magenta"
+                    ))
+                    console.print("[dim]Tape /exo_soc show-solution pour voir la solution[/dim]")
+            except Exception as e:
+                console.print(f"[red]❌ Erreur exercice : {e}[/red]")
+
         else:
             tag_filter, question = parse_filter(user_input)
             if tag_filter:
                 console.print(f"[dim]🔍 Filtre : [bold]{tag_filter}[/bold][/dim]")
             try:
-                results = retrieve(question, top_k=35, tag_filter=tag_filter)
-                if not results:
-                    console.print("[yellow]⚠ Aucun chunk trouvé. Lance /index d'abord.[/yellow]")
-                    continue
-                sources = list({clean_text(r.payload['file']) for r in results})
-                console.print(f"[dim]📎 Sources : {', '.join(sources)}[/dim]")
+                # 🔍 Détecter si requête est trop longue
+                is_long, fragments = detect_long_query(question)
                 
-                # Sélectionner le modèle
+                # Sélectionner le modèle UNE FOIS
                 model_type, model_config = select_model()
                 
-                answer = generate_answer(question, results, history, model_config)
-                history.append({"role": "user", "content": question})
-                history.append({"role": "assistant", "content": answer})
+                if is_long and len(fragments) > 1:
+                    # Fragmenter la requête
+                    combined_answer = ""
+                    for idx, fragment in enumerate(fragments, 1):
+                        console.print(f"\\n[cyan]Fragment {idx}/{len(fragments)}...[/cyan]")
+                        results = retrieve(fragment, tag_filter=tag_filter)
+                        if not results:
+                            console.print("[yellow]⚠ Aucun chunk trouvé pour ce fragment.[/yellow]")
+                            continue
+                        
+                        answer = generate_answer(fragment, results, history, model_config)
+                        combined_answer += f"\\n**Partie {idx}:**\\n{answer}"
+                    
+                    console.print(f"\\n[green]✓ Tous les fragments traités[/green]")
+                    history.append({"role": "user", "content": question})
+                    history.append({"role": "assistant", "content": combined_answer})
+                else:
+                    # Question courte : traitement normal
+                    results = retrieve(question, tag_filter=tag_filter)
+                    if not results:
+                        console.print("[yellow]⚠ Aucun chunk trouvé. Lance /index d'abord.[/yellow]")
+                        continue
+                    sources = list({clean_text(r.payload['file']) for r in results})
+                    console.print(f"[dim]📎 Sources : {', '.join(sources)}[/dim]")
+                    
+                    answer = generate_answer(question, results, history, model_config)
+                    history.append({"role": "user", "content": question})
+                    history.append({"role": "assistant", "content": answer})
             except Exception as e:
                 console.print(f"[red]❌ Erreur : {e}[/red]")
 

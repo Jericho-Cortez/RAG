@@ -1,0 +1,162 @@
+# ╔═══════════════════════════════════════════════════════════════╗
+# ║   DONNÉES D'EXEMPLE - Requêtes SPL pour Splunk              ║
+# ║   À copier-coller directement dans Splunk Search             ║
+# ╚═══════════════════════════════════════════════════════════════╝
+
+# ════════════════════════════════════════════════════════════════
+# 1️⃣  QUERY: Détecter les processus enfants suspectes
+# ════════════════════════════════════════════════════════════════
+# Cherche: powershell.exe -> cmd.exe (très suspecte)
+
+index=main sourcetype="WinEventLog:Security" EventCode=4688 
+| search (CommandLine="*powershell*" OR CommandLine="*cmd.exe*") 
+| stats count by ProcessName, CommandLine
+| rename ProcessName as "Process" | table Process, CommandLine
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 2️⃣  QUERY: Détecter les créations de fichiers avec .locked
+# ════════════════════════════════════════════════════════════════
+# Ransomware marker: .locked extension
+
+index=main sourcetype="WinEventLog:Security" EventCode=4658
+| search Object_Name="*.locked"
+| stats count by Object_Name, TimeCreated
+| table TimeCreated, Object_Name
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 3️⃣  QUERY: Détecter les connexions vers l'IP C2
+# ════════════════════════════════════════════════════════════════
+# C2 IP: 203.0.113.45:443
+
+index=main sourcetype="WinEventLog:Security" EventCode=5156
+| search dest_ip="203.0.113.45" dest_port=443
+| stats count by src_ip, dest_ip, dest_port, TimeCreated
+| rename src_ip as "Source IP", dest_ip as "C2 Server", dest_port as "Port"
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 4️⃣  QUERY: Tableau de bord - Synthèse de l'attaque
+# ════════════════════════════════════════════════════════════════
+
+index=main 
+| stats count by EventCode, TimeCreated
+| eval Attack_Step = case(
+    EventCode=4688, "Process Creation",
+    EventCode=4658, "File Deletion",
+    EventCode=5156, "Outbound Connection",
+    EventCode=4657, "Registry Modified",
+    1=1, "Other Event"
+  )
+| table TimeCreated, Attack_Step, count
+| sort TimeCreated
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 5️⃣  QUERY: Règle d'alerte - Déclencher sur C2 Detection
+# ════════════════════════════════════════════════════════════════
+# À créer comme SavedSearch/Alert dans Splunk
+
+index=main sourcetype="WinEventLog:Security" (EventCode=5156 AND dest_ip="203.0.113.45" AND dest_port=443)
+| alert "RANSOMWARE: C2 Activity Detected" 
+| fields TimeCreated, src_ip, dest_ip, dest_port, ProcessName
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 6️⃣  QUERY: Recherche complète - Timeline d'attaque
+# ════════════════════════════════════════════════════════════════
+# Affiche TOUS les événements de l'attaque rangés chronologiquement
+
+index=main 
+| search (
+    (EventCode=4688 AND (CommandLine="*powershell*" OR CommandLine="*cmd*")) OR
+    (EventCode=4658 AND Object_Name="*.locked") OR
+    (EventCode=5156 AND dest_ip="203.0.113.45") OR
+    (EventCode=4657 AND ObjectValueName="*persistence*")
+  )
+| fields + TimeCreated, EventCode, EventDescription, CommandLine, Object_Name, dest_ip, src_ip
+| sort TimeCreated
+| convert ctime(TimeCreated) as "Timestamp"
+| eval Phase = case(
+    EventCode=4688, "01_Execution",
+    EventCode=4658, "02_Encryption",
+    EventCode=5156, "03_C2_Callback",
+    EventCode=4657, "04_Persistence"
+  )
+| table Phase, Timestamp, EventCode, EventDescription, CommandLine, Object_Name, dest_ip
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 7️⃣  QUERY: Extraction des IOCs (Indicators of Compromise)
+# ════════════════════════════════════════════════════════════════
+
+index=main 
+| search (EventCode=4688 OR EventCode=4658 OR EventCode=5156)
+| fields EventCode, src_ip, dest_ip, dest_port, ProcessName, CommandLine, Object_Name, ParentProcessName
+| eval IOC_Type = case(
+    NOT(isempty(dest_ip)), "IP_Address",
+    NOT(isempty(Object_Name)), "File_Hash",
+    NOT(isempty(ProcessName)), "Process_Name",
+    1=1, "Unknown"
+  )
+| eval IOC_Value = coalesce(dest_ip, Object_Name, ProcessName, CommandLine)
+| stats values(EventCode) as "Event_Codes", values(IOC_Type) as "Type", values(IOC_Value) as "Value"
+| table Type, Value, Event_Codes
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 8️⃣  QUERY: Statistiques par étape (Dashboard)
+# ════════════════════════════════════════════════════════════════
+
+index=main 
+| stats count as "Total Events", values(_time) as "First_Event", latest(_time) as "Last_Event"
+| eval Duration_Seconds = round(Last_Event - First_Event)
+| fields Total_Events, First_Event, Last_Event, Duration_Seconds
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 9️⃣  CONFIG: Comment créer une alerte dans Splunk
+# ════════════════════════════════════════════════════════════════
+
+Description: Rule de détection ransomware
+Name: Ransomware_Detection_Rule
+
+Search String:
+index=main sourcetype="WinEventLog:Security" EventCode=5156 dest_ip="203.0.113.45"
+
+Alert Trigger: When count >= 1
+Alert Action: Email to soc-team@company.com
+Notification: "🚨 CRITICAL: Ransomware C2 Activity Detected!"
+
+---
+
+# ════════════════════════════════════════════════════════════════
+# 🔟  MANUAL: Fichiers journaux à importer dans Splunk
+# ════════════════════════════════════════════════════════════════
+
+Pour peupler Splunk avec des données de test:
+
+1. Windows Event Viewer (Export)
+   Path: %SystemRoot%\System32\winevt\Logs\Security.evtx
+   Export as: Security_events.csv
+   Splunk Import: Data Inputs > Upload
+
+2. Sysmon Logs
+   File: C:\Windows\System32\Sysmon-<EventID>.log
+   Source type: sysmon
+   Configure: props.conf
+
+3. Netstat Output (Network Connections)
+   Command: netstat -ano > network_connections.txt
+   Import: Manual via Splunk forwarder
+
+════════════════════════════════════════════════════════════════

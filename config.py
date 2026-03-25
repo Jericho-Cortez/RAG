@@ -22,7 +22,7 @@ MODEL_FAST = {
     "name": "llama-3.3-70b-versatile",
     "label": "⚡ Llama 3.3 70B (Rapide)",
     "temperature": 0.5,
-    "max_tokens": 2048,
+    "max_tokens": 1024,  # 🚀 Réduit de 2048 → plus de place pour contexte
     "tps": 280,
     "description": "Réponses rapides et directes"
 }
@@ -32,7 +32,7 @@ MODEL_PRECISE = {
     "name": "openai/gpt-oss-120b",
     "label": "🎯 GPT-OSS 120B (Précis)",
     "temperature": 0.3,
-    "max_tokens": 4096,
+    "max_tokens": 2048,  # 🚀 Réduit de 4096 → respecte limites Groq
     "tps": 500,
     "description": "Réponses détaillées et rigoureuses"
 }
@@ -42,12 +42,18 @@ LLM_MODEL_DEFAULT = "precise"  # "fast" ou "precise"
 
 # Chunking (pour Markdown ET PDF)
 # Réduit à 200 pour respecter la limite du modèle d'embedding (all-minilm:l6-v2 = ~256 tokens)
-CHUNK_SIZE          = 200
-CHUNK_OVERLAP       = 40
+CHUNK_SIZE          = 512       # 🚀 Augmenté de 200 → chunks plus grands = moins d'embeddings
+CHUNK_OVERLAP       = 50        # Garder contexte sur les frontières
 
 # Support des formats
 # - Markdown (.md) : traités par défaut
 # - PDF (.pdf) : extraction via PyMuPDF ou PyPDF2
+
+# 🚀 OPTIMISATIONS CONTEXTE (pour respecter limites Groq)
+MAX_CHUNKS_RETRIEVE  = 25      # Réduit de 40 → chunks pertinents uniquement
+MAX_CHUNKS_CONTEXT   = 15      # Réduit de 35 → contexte plus compact
+MAX_CHUNK_LENGTH     = 800     # Tronque chaque chunk à 800 chars (prévient débordement)
+TOKEN_ESTIMATE_RATIO = 4       # 1 token ≈ 4 caractères (approximation)
 
 # Prompt System (utilisé par les deux modèles)
 SYSTEM_PROMPT = """Tu es un expert en IT et cybersécurité, assistant pour révision et formation.

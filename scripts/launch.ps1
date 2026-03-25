@@ -185,7 +185,9 @@ try {
 if (-not $collectionExists -or $chunkCount -eq 0 -or $changedFiles.Count -gt 0 -or $deleted) {
     if (-not $collectionExists -or $chunkCount -eq 0) {
         Write-Warn "Collection vide ou inexistante → première indexation complète..."
-        $env:CHANGED_FILES = ""src\ingest.py"
+        $env:CHANGED_FILES = ""
+        $env:DELETED_FILES = ""
+        & $VENV_PYTHON "$PROJECT_DIR\src\ingest.py"
     } else {
         Write-Warn "$($changedFiles.Count) fichier(s) modifié(s) → indexation incrémentale..."
         # Passer via fichier temp pour éviter les problèmes d'encoding
@@ -196,9 +198,7 @@ if (-not $collectionExists -or $chunkCount -eq 0 -or $changedFiles.Count -gt 0 -
         } | ConvertTo-Json | Set-Content $tempFile -Encoding UTF8
         
         $env:CORHACK_INDEX_FILE = $tempFile
-        & $VENV_PYTHON "$PROJECT_DIR\src
-        $env:CORHACK_INDEX_FILE = $tempFile
-        & $VENV_PYTHON "$PROJECT_DIR\ingest.py"
+        & $VENV_PYTHON "$PROJECT_DIR\src\ingest.py"
         $env:CORHACK_INDEX_FILE = ""
         Remove-Item $tempFile -ErrorAction SilentlyContinue
     }
