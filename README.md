@@ -2,6 +2,8 @@
 
 Assistant RAG intelligent pour réviser et explorer tes vaults Obsidian avec IA.
 
+✨ **Vibe Coder Project** - Code épurant conçu pour les studieux passionnés
+
 ## Features
 
 - Markdown + PDF (PyMuPDF)
