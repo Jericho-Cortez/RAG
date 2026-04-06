@@ -26,8 +26,8 @@ Assistant RAG intelligent pour réviser et explorer tes vaults Obsidian avec IA.
 
 ```bash
 # 1. Clone le projet
-git clone <URL_DE_TON_DEPOT>
-cd RAG-Obsidian
+git clone https://github.com/Jericho-Cortez/RAG.git
+cd RAG
 
 # 2. Crée le virtualenv et installe les dépendances
 python -m venv .venv
