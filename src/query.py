@@ -1,5 +1,6 @@
 # query.py - CORHack RAG CLI (multi-vault) ✅ Avec support PDF
 import os
+import re
 import time
 import sys
 from collections import defaultdict
@@ -13,7 +14,7 @@ from qdrant_client import QdrantClient
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
@@ -52,6 +53,17 @@ client  = QdrantClient(url=QDRANT_URL)
 
 STYLE = Style.from_dict({"prompt": "#00d7ff bold"})
 
+ANSWER_THEME = {
+    "tldr_border": "bright_green",
+    "section_border_primary": "bright_cyan",
+    "section_border_secondary": "bright_blue",
+    "source_border": "bright_cyan",
+    "panel_box": box.ROUNDED,
+    "section_padding": (0, 2),
+    "summary_padding": (0, 2),
+    "source_padding": (0, 2),
+}
+
 current_graph = None
 
 # GLOBAL CLEAN TEXT
@@ -60,6 +72,360 @@ def clean_text(text):
         text = str(text)
     # Force round-trip UTF-8 to strip any invalid byte
     return text.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='replace')
+
+
+def normalize_display_text(text: str) -> str:
+    """Nettoie le texte avant affichage Rich."""
+    text = clean_text(text)
+    text = re.sub(r"(?m)^\s*[─━―\-=]{10,}\s*$", "", text)
+    text = re.sub(r"(?m)^(#{1,6}\s+)", r"\n\1", text)
+    text = re.sub(r"(?m)^(\d+(?:\.\d+)*\.?\s+)", r"\n\1", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def highlight_acronyms(text: str) -> str:
+    """Met en évidence les acronymes les plus utiles dans le rendu."""
+    acronyms = [
+        "PCA", "PRA", "HA", "NFS", "VM", "VMs", "API", "CPU", "RAM",
+        "PDF", "CLI", "IDE", "TLS", "SSH", "TCP", "UDP", "LLM", "JSON",
+        "DNS", "RAG", "LLMs"
+    ]
+
+    highlighted = text
+    for acronym in acronyms:
+        highlighted = re.sub(rf"\b{re.escape(acronym)}\b", f"**{acronym}**", highlighted)
+    return highlighted
+
+
+def clean_section_title(title: str) -> str:
+    """Nettoie un titre avant affichage."""
+    title = clean_text(title)
+    title = re.sub(r"\*+", "", title)
+    title = re.sub(r"`+", "", title)
+    title = re.sub(r"^(#{1,6}\s+)", "", title)
+    title = re.sub(r"^(\d+(?:\.\d+)*\.?\s+)", "", title)
+    title = title.strip(" -–—:|")
+    summary_aliases = {
+        "tldr": "Résumé express",
+        "tl;dr": "Résumé express",
+        "points clés": "Points clés",
+        "points cles": "Points clés",
+        "résumé": "Résumé express",
+        "resume": "Résumé express",
+        "à retenir": "À retenir",
+        "a retenir": "À retenir",
+    }
+    return summary_aliases.get(title.lower(), title or "Section")
+
+
+def is_summary_title(title: str) -> bool:
+    """Indique si le bloc correspond à un résumé."""
+    normalized = title.lower()
+    return normalized in {"résumé express", "points clés", "à retenir"}
+
+
+def remove_leading_summary(text: str) -> str:
+    """Supprime un éventuel résumé initial pour éviter le doublon avec le panneau TL;DR."""
+    lines = normalize_display_text(text).splitlines()
+    if not lines:
+        return ""
+
+    summary_heading = re.compile(r"^(?:#{1,6}\s+)?(?:tldr|tl;dr|résumé|resume|points clés|points cles|à retenir|a retenir)\b", re.IGNORECASE)
+    bullet_pattern = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
+    heading_pattern = re.compile(r"^(?:#{1,6}\s+|\d+(?:\.\d+)*\.?\s+)")
+
+    start_index = None
+    for index, line in enumerate(lines[:20]):
+        if summary_heading.match(line.strip()):
+            start_index = index
+            break
+
+    if start_index is None:
+        return "\n".join(lines).strip()
+
+    index = start_index + 1
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if not stripped:
+            index += 1
+            break
+        if heading_pattern.match(stripped) and not bullet_pattern.match(stripped):
+            break
+        index += 1
+
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+
+    return "\n".join(lines[index:]).strip()
+
+
+def extract_tldr(text: str) -> list[str]:
+    """Extrait jusqu'à trois idées clés pour un bloc TL;DR."""
+    lines = normalize_display_text(text).splitlines()
+    summary_lines: list[str] = []
+    capture = False
+    bullet_pattern = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
+    heading_pattern = re.compile(r"^(?:#{1,6}\s+|\d+(?:\.\d+)*\.?\s+)")
+    summary_heading = re.compile(r"^(?:#{1,6}\s+)?(?:tldr|tl;dr|points clés|points cles|résumé|resume|à retenir|a retenir)\b", re.IGNORECASE)
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if capture and summary_lines:
+                break
+            continue
+
+        if summary_heading.match(stripped):
+            capture = True
+            continue
+
+        if capture:
+            if heading_pattern.match(stripped) and not bullet_pattern.match(stripped):
+                break
+            if bullet_pattern.match(stripped):
+                summary_lines.append(bullet_pattern.sub("", stripped).strip())
+            elif summary_lines:
+                summary_lines[-1] = f"{summary_lines[-1]} {stripped}"
+            if len(summary_lines) >= 3:
+                break
+
+    if summary_lines:
+        return summary_lines[:3]
+
+    for line in lines:
+        stripped = line.strip()
+        if bullet_pattern.match(stripped):
+            summary_lines.append(bullet_pattern.sub("", stripped).strip())
+        if len(summary_lines) >= 3:
+            break
+
+    return summary_lines[:3]
+
+
+def guess_block_title(block: str, fallback_index: int) -> str:
+    """Déduit un titre lisible pour un bloc de réponse."""
+    for raw_line in block.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        line = re.sub(r"^(#{1,6}\s+)", "", line)
+        line = re.sub(r"^(\d+(?:\.\d+)*\.?\s+)", "", line)
+        line = clean_section_title(line)
+        if line:
+            return line[:60]
+
+    return f"Section {fallback_index}"
+
+
+def is_table_like_block(block: str) -> bool:
+    """Détecte les blocs qui ressemblent à des tableaux ou listes compactes."""
+    lines = [line.strip() for line in block.splitlines() if line.strip()]
+    if len(lines) < 3:
+        return False
+
+    pattern = re.compile(r"\s{2,}")
+    table_like_lines = 0
+    for line in lines:
+        if line.startswith(("-", "•", "*", "1.", "1)", "2.", "2)")):
+            continue
+        if pattern.search(line) and len(line) >= 40:
+            table_like_lines += 1
+
+    return table_like_lines >= max(2, len(lines) // 2)
+
+
+def split_table_cells(line: str) -> list[str]:
+    """Découpe une ligne de tableau selon les séparateurs les plus probables."""
+    if "|" in line:
+        cells = [cell.strip() for cell in line.split("|")]
+    else:
+        cells = [cell.strip() for cell in re.split(r"\s{2,}", line)]
+    return [cell for cell in cells if cell]
+
+
+def parse_table_block(block: str) -> tuple[list[str] | None, list[list[str]]]:
+    """Essaie d'extraire un en-tête et des lignes de données à partir d'un bloc compact."""
+    rows: list[list[str]] = []
+    for raw_line in block.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if re.fullmatch(r"[─━―\-=]{5,}", line):
+            continue
+
+        cells = split_table_cells(line)
+        if len(cells) >= 2:
+            rows.append(cells)
+
+    if len(rows) < 2:
+        return None, rows
+
+    header = None
+    first_row = rows[0]
+    if len(first_row) >= 3 and all(len(cell) <= 30 for cell in first_row):
+        header = first_row
+        rows = rows[1:]
+
+    return header, rows
+
+
+def classify_section_order(title: str, block: str, fallback_index: int) -> tuple[int, int]:
+    """Classe les sections pour respecter un ordre plus logique à l'affichage."""
+    text = f"{title}\n{block}".lower()
+
+    sections = [
+        ["résumé", "resume", "tldr", "tl;dr", "points clés", "points cles", "à retenir", "a retenir"],
+        ["objectif", "présentation", "presentation", "objectif général", "objectif global"],
+        ["définitions", "definitions", "concepts clés", "concepts cles", "acronymes"],
+        ["architecture", "topologie", "composition", "architecture proposée"],
+        ["actions", "tâches", "taches", "missions", "travaux", "déployer", "deployer"],
+        ["livrables", "compétences", "competences", "résultats", "resultats"],
+    ]
+
+    for order, keywords in enumerate(sections, start=1):
+        if any(keyword in text for keyword in keywords):
+            return order, fallback_index
+
+    return len(sections) + 1, fallback_index
+
+
+def render_table_like_block(block: str, block_index: int):
+    """Convertit un bloc de type tableau en vrai tableau Rich."""
+    header, rows = parse_table_block(block)
+
+    if not rows:
+        return Panel(
+            Markdown(highlight_acronyms(block)),
+            title=f"📌 {guess_block_title(block, block_index)}",
+            border_style=ANSWER_THEME["section_border_primary"],
+            box=ANSWER_THEME["panel_box"],
+            padding=ANSWER_THEME["section_padding"],
+        )
+
+    if header:
+        table = Table(
+            box=box.SIMPLE_HEAVY,
+            show_header=True,
+            header_style="bold cyan",
+            expand=True,
+            pad_edge=False,
+            show_lines=False,
+        )
+
+        for column in header:
+            table.add_column(highlight_acronyms(clean_section_title(column))[:28], overflow="fold")
+
+        for row in rows:
+            row_values = [highlight_acronyms(cell) for cell in row]
+            if len(row_values) < len(header):
+                row_values.extend([""] * (len(header) - len(row_values)))
+            elif len(row_values) > len(header):
+                row_values = row_values[: len(header) - 1] + [" ".join(row_values[len(header) - 1:])]
+            table.add_row(*row_values)
+
+        return Panel(
+            table,
+            title=f"📊 {clean_section_title(guess_block_title(block, block_index))}",
+            border_style=ANSWER_THEME["section_border_primary"],
+            box=ANSWER_THEME["panel_box"],
+            padding=(0, 1),
+        )
+
+    bullets = []
+    for row in rows:
+        label = highlight_acronyms(row[0])
+        value = " ".join(highlight_acronyms(cell) for cell in row[1:]).strip()
+        if value:
+            bullets.append(f"• **{label}** : {value}")
+        else:
+            bullets.append(f"• {label}")
+
+    return Panel(
+        Markdown("\n".join(bullets)),
+        title=f"📌 {clean_section_title(guess_block_title(block, block_index))}",
+        border_style=ANSWER_THEME["section_border_primary"],
+        box=ANSWER_THEME["panel_box"],
+        padding=ANSWER_THEME["section_padding"],
+    )
+
+
+def split_display_blocks(text: str) -> list[str]:
+    """Découpe une réponse en blocs pour l'affichage."""
+    lines = normalize_display_text(text).splitlines()
+    blocks: list[list[str]] = []
+    current_block: list[str] = []
+
+    heading_pattern = re.compile(r"^(?:#{1,6}\s+|\d+(?:\.\d+)*\.?\s+)")
+
+    for line in lines:
+        stripped = line.strip()
+        if heading_pattern.match(stripped) and current_block:
+            blocks.append(current_block)
+            current_block = [line]
+        else:
+            current_block.append(line)
+
+    if current_block:
+        blocks.append(current_block)
+
+    return ["\n".join(block).strip() for block in blocks if any(line.strip() for line in block)]
+
+
+def display_sources(sources: list[str]):
+    """Affiche les sources dans un panneau compact."""
+    unique_sources = []
+    for source in sources:
+        source = clean_text(source)
+        if source not in unique_sources:
+            unique_sources.append(source)
+
+    if not unique_sources:
+        return
+
+    table = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
+    table.add_column("Sources", style="cyan")
+
+    for source in unique_sources:
+        table.add_row(f"• {source}")
+
+    console.print(Panel(
+        table,
+        title=f"📎 Sources ({len(unique_sources)})",
+        border_style=ANSWER_THEME["source_border"],
+        box=ANSWER_THEME["panel_box"],
+        padding=ANSWER_THEME["source_padding"],
+    ))
+
+
+def display_answer(full_response: str):
+    """Affiche la réponse finale avec une mise en page plus propre."""
+    body_text = remove_leading_summary(full_response)
+    rendered_blocks = []
+
+    tldr_items = extract_tldr(full_response)
+    if tldr_items:
+        tldr_text = "\n".join(f"• {highlight_acronyms(item)}" for item in tldr_items)
+        rendered_blocks.append(Panel(
+            Markdown(tldr_text),
+            title="🧭 Résumé express",
+            border_style=ANSWER_THEME["tldr_border"],
+            box=ANSWER_THEME["panel_box"],
+            padding=ANSWER_THEME["summary_padding"],
+        ))
+
+    rendered_blocks.append(Panel(
+        Markdown(highlight_acronyms(body_text)),
+        title="📌 Réponse",
+        border_style=ANSWER_THEME["section_border_primary"],
+        box=ANSWER_THEME["panel_box"],
+        padding=ANSWER_THEME["section_padding"],
+    ))
+
+    console.print()
+    console.print(*rendered_blocks, sep="\n\n")
+    console.print()
 
 HELP_TEXT = """
 [bold cyan]Commandes disponibles :[/bold cyan]
@@ -232,9 +598,7 @@ def generate_answer(query: str, results: list, history: list, model_config: dict
             for chunk in stream:
                 token = chunk.choices[0].delta.content or ""
                 full_response += token
-            console.print()
-            console.print(Markdown(clean_text(full_response)))
-            console.print()
+            display_answer(full_response)
             return full_response
         except Exception as e:
             if "429" in str(e) and attempt < 4:
@@ -290,13 +654,23 @@ def select_model():
     """Dialogue interactif pour sélectionner le modèle."""
     from rich.prompt import Prompt
     
-    console.print("\n[bold cyan]Quel modèle veux-tu utiliser ?[/bold cyan]")
-    console.print(f"  [green]1[/green] {MODEL_FAST['label']}")
-    console.print(f"     └─ {MODEL_FAST['description']} ({MODEL_FAST['tps']} tps)")
-    console.print(f"  [green]2[/green] {MODEL_PRECISE['label']}")
-    console.print(f"     └─ {MODEL_PRECISE['description']} ({MODEL_PRECISE['tps']} tps)")
-    
-    choice = Prompt.ask("  Choix", choices=["1", "2"], default="2").strip()
+    table = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="bold cyan", pad_edge=False)
+    table.add_column("Choix", style="green", width=7)
+    table.add_column("Modèle", style="bold")
+    table.add_column("Profil", style="dim")
+    table.add_column("Débit", justify="right", style="magenta", width=8)
+    table.add_row("1", MODEL_FAST['label'], MODEL_FAST['description'], f"{MODEL_FAST['tps']} tps")
+    table.add_row("2", MODEL_PRECISE['label'], MODEL_PRECISE['description'], f"{MODEL_PRECISE['tps']} tps")
+
+    console.print()
+    console.print(Panel(
+        table,
+        title="Quel modèle veux-tu utiliser ?",
+        border_style="cyan",
+        padding=(0, 1),
+    ))
+
+    choice = Prompt.ask("  Modèle", choices=["1", "2"], default="2").strip()
     
     if choice == "1":
         return "fast", MODEL_FAST
@@ -678,7 +1052,7 @@ def run_cli():
                         console.print("[yellow]⚠ Aucun chunk trouvé. Lance /index d'abord.[/yellow]")
                         continue
                     sources = list({clean_text(r.payload['file']) for r in results})
-                    console.print(f"[dim]📎 Sources : {', '.join(sources)}[/dim]")
+                    display_sources(sources)
                     
                     answer = generate_answer(question, results, history, model_config)
                     history.append({"role": "user", "content": question})

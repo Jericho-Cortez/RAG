@@ -8,6 +8,8 @@ Assistant RAG intelligent pour réviser et explorer tes vaults Obsidian avec IA.
 
 - Markdown + PDF (PyMuPDF)
 - LLM Dual-Model : Llama 3.3 70B (rapide) + GPT-OSS 120B (précis) via Groq Cloud
+- Réponses Rich avec résumé express, sections structurées et affichage compact des sources
+- Sélecteur de modèle présenté dans un tableau Rich plus lisible
 - Quiz adaptatif : normal, chrono, révision + difficulté progressive
 - Graphe de connaissances interactif
 - Multi-vault dynamique (`/switch`)
@@ -24,8 +26,8 @@ Assistant RAG intelligent pour réviser et explorer tes vaults Obsidian avec IA.
 
 ```bash
 # 1. Clone le projet
-git clone https://github.com/Jericho-Cortez/RAG.git
-cd RAG
+git clone <URL_DE_TON_DEPOT>
+cd RAG-Obsidian
 
 # 2. Crée le virtualenv et installe les dépendances
 python -m venv .venv
@@ -60,6 +62,12 @@ python src/query.py
 ```
 
 Le launcher gère automatiquement Docker, Qdrant, Ollama, les dépendances et l'indexation.
+
+## Confidentialité
+
+- Aucun chemin personnel n'est censé rester dans le dépôt.
+- Le fichier `.env` reste local et n'est jamais versionné.
+- Les graphes générés et les résultats de quiz sont ignorés par Git.
 
 ## Commandes
 
@@ -130,8 +138,8 @@ Obsidian Vault (.md/.pdf)
 | Variable | Défaut | Description |
 |----------|--------|-------------|
 | `GROQ_API_KEY` | *requis* | Clé API Groq |
-| `VAULT_PATH` | `./vault` | Chemin du vault Obsidian |
-| `COLLECTION_NAME` | `obsidian` | Nom de la collection Qdrant |
+| `VAULT_PATH` | `~/Documents/Obsidian` | Chemin du vault Obsidian |
+| `COLLECTION_NAME` | `obsidian_notes` | Nom de la collection Qdrant |
 | `QDRANT_URL` | `http://localhost:6333` | URL Qdrant |
 
 ## Licence

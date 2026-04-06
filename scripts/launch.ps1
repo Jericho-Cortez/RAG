@@ -3,10 +3,11 @@
 $PROJECT_DIR = Split-Path -Parent $PSScriptRoot
 $VENV_PYTHON  = "$PROJECT_DIR\.venv\Scripts\python.exe"
 $QDRANT_URL   = "http://localhost:6333/healthz"
+$defaultVault = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Obsidian'
 $lastVault = if (Test-Path "$PROJECT_DIR\.cache\.corhack-cache.json") {
     $cache = Get-Content "$PROJECT_DIR\.cache\.corhack-cache.json" | ConvertFrom-Json
     $cache.PSObject.Properties.Name | Select-Object -First 1 | Split-Path -Parent
-} else { "C:\Users\jbcde\Documents\Dossier Obsidian\Perso\" }
+} else { $defaultVault }
 
 
 function Write-Step { param($msg) Write-Host "  ► $msg" -ForegroundColor Cyan }

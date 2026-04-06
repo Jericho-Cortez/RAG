@@ -3,6 +3,11 @@
 __pycache__
 *.pyc
 .env
+.cache/
+output/
+quiz_results/
+knowledge_graph_*.html
+knowledge_graph_*.json
 .env.local
 .corhack-cache*.json
 quiz_results/
